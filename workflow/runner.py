@@ -137,8 +137,8 @@ def run_claude(task: dict) -> dict:
     # 加速: max_turns 之外再加 wall-clock hard cap, 防 Claude API hang
     # (MiniMax-M3 在 -p 模式下偶尔 25min 完全不输出)
     max_turns = min(task.get("est_turns", 12), 12)  # 强制 ≤12, 避免长跑挂起
-    hard_timeout_s = 480  # 8 分钟 wall-clock 上限
-    stall_timeout_s = 240  # 4 分钟无 stdout 输出视为 stall
+    hard_timeout_s = 600  # 10 分钟 wall-clock 上限
+    stall_timeout_s = 360  # 6 分钟无 tool_use 输出视为 stall (给 thinking 留时间)
     cmd = [
         "claude",
         "-p",
@@ -193,11 +193,31 @@ def run_claude(task: dict) -> dict:
             proc.kill()
             break
         stall_for = now - last_io
+        # 改进: stall 检测看 tool_use 计数, 不是 raw stdout
+        # (Claude thinking 也会写 stdout, 之前误判 4min)
         if stall_for > stall_timeout_s and elapsed > 60:
-            stall_reason = f"stall_no_output_{int(stall_for)}s"
-            log(f"  {task['id']} STALL: no stdout for {int(stall_for)}s, killing claude")
-            proc.kill()
-            break
+            # 解析 stdout 找最近的 tool_use
+            cur_text = "".join(stdout_holder)
+            last_tool_idx = cur_text.rfind('"type":"tool_use"')
+            last_result_idx = cur_text.rfind('"type":"result"')
+            if last_tool_idx > last_result_idx:
+                # 有 tool_use 在最近 4 分钟? (粗略: 如果 tool_use 之后还有内容说明是 thinking)
+                tail = cur_text[last_tool_idx:]
+                # 检查 thinking 状态 (MiniMax-M3 用 "thinking" block)
+                has_thinking = '"type":"thinking"' in tail
+                if has_thinking:
+                    # Claude 在 thinking, 不算 stall
+                    pass
+                else:
+                    stall_reason = f"stall_no_tooluse_{int(stall_for)}s"
+                    log(f"  {task['id']} STALL: no tool_use for {int(stall_for)}s, killing claude")
+                    proc.kill()
+                    break
+            else:
+                stall_reason = f"stall_no_output_{int(stall_for)}s"
+                log(f"  {task['id']} STALL: no stdout for {int(stall_for)}s, killing claude")
+                proc.kill()
+                break
         _time.sleep(2)
 
     t_out.join(timeout=5)

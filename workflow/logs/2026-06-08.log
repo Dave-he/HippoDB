@@ -1,0 +1,17 @@
+[2026-06-07T16:00:00Z] === runner start ===
+[2026-06-07T16:00:00Z] dispatching T-0004: port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+[2026-06-07T16:00:48Z] another runner holds the lock, exiting
+[2026-06-07T16:05:00Z] another runner holds the lock, exiting
+[2026-06-07T16:07:59Z]   T-0004 STALL: no stdout for 240s, killing claude
+[2026-06-07T16:07:59Z]   T-0004 killed: stall_no_output_240s
+[2026-06-07T16:07:59Z]   T-0004 done: turns=0 cost=$0.000 write/edit=0 bash=7 read=6 text_len=404 subtype=error_killed
+[2026-06-07T16:07:59Z]   T-0004 STALLED: 6 reads but 0 writes of any kind
+[2026-06-07T16:07:59Z]   cargo check OK
+[2026-06-07T16:10:00Z] another runner holds the lock, exiting
+[2026-06-07T16:12:59Z]   cargo test TIMEOUT
+[2026-06-07T16:12:59Z] === runner end — T-0004 -> stalled (attempts=3) ===
+[2026-06-07T16:12:59Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-07T16:12:59Z]     trigger pid=186
+[2026-06-07T16:15:00Z] === runner start ===
+[2026-06-07T16:15:00Z] dispatching T-0004: port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+[2026-06-07T16:15:28Z] another runner holds the lock, exiting

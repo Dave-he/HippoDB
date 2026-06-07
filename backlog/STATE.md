@@ -2,16 +2,15 @@
 
 - **Total tasks**: 18
 - **Done**: 3 (16.7%)
-- **Queued**: 13
-- **In progress**: 1
+- **Queued**: 15
+- **In progress**: 0
 - **Blocked**: 0
 - **Failed**: 0
-- **Last update**: 2026-06-07T15:32:12.756639+00:00
+- **Last update**: 2026-06-07T16:12:59.830332+00:00
 
-## in_progress (1)
-- `T-0005` [L0/util] port sqlite3_hash and GrowableArray — last error: killed by Hermes after 22min no-result; Claude API appears to hang on str.rs (a small task)
-
-## queued (13)
+## queued (15)
+- `T-0004` [L0/util] port UTF-8 helpers (sqlite3Utf8Read/Write/Compare) — last error: claude read 6 files but wrote 0; prompt may be too cautious
+- `T-0005` [L0/util] port sqlite3_hash and GrowableArray — last error: HashMap type annotation. Manual fix applied: 17 occurrences of to_ptr() -> to_ptr::<i32>() in tests. Hash.rs compiles. Re-run should pass cargo test.
 - `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp) — last error: claude read 10 files but wrote 0; prompt may be too cautious
 - `T-0007a` [L0/util] port integer printf (d/i/u/x/o/p/%%)
 - `T-0007b` [L0/util] port string printf (s/.*)
