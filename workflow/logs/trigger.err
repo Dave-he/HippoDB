@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "/Users/hyx/workspace/sqllite-project/workflow/event_router.py", line 293, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/hyx/workspace/sqllite-project/workflow/event_router.py", line 282, in main
+    on_runner_done()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/hyx/workspace/sqllite-project/workflow/event_router.py", line 89, in on_runner_done
+    run_runner()
+    ~~~~~~~~~~^^
+  File "/Users/hyx/workspace/sqllite-project/workflow/event_router.py", line 53, in run_runner
+    result = subprocess.run(
+        ["bash", str(ROOT / "workflow" / "run-once.sh")],
+    ...<7 lines>...
+        timeout=1500,
+    )
+  File "/usr/local/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 1222, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 2126, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 1266, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['bash', '/Users/hyx/workspace/sqllite-project/workflow/run-once.sh']' timed out after 1500 seconds

@@ -4,3 +4,5 @@
 [2026-06-07T13:17:53Z] [event] event_router source=runner-fail task=T-0004 pr=0 run=
 [2026-06-07T13:17:53Z] [event] runner-fail for T-0004 attempts=1, backoff 60s
 [2026-06-07T13:24:31Z] [event] runner exit=0
+[2026-06-07T13:29:09Z] [event] event_router source=runner-done task= pr=0 run=
+[2026-06-07T13:29:09Z] [event] runner-done → immediate next dispatch

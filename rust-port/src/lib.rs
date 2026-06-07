@@ -23,6 +23,8 @@ pub use util::pattern::{
  sqlite3_strglob, sqlite3_strlike, SQLITE_MATCH, SQLITE_NOMATCH, SQLITE_NOWILDCARDMATCH,
 };
 pub use util::utf8::{utf8_char_count, utf8_read, utf8_write};
+pub use util::hash::{str_hash, Hash, GrowableArray};
+pub use util::str::{sqlite3_stricmp, sqlite3_strnicmp};
 
 pub const SQLITE_VERSION: &str = env!("SQLITE_VERSION");
 pub const SQLITE_VERSION_NUMBER: i32 = 3_054_000; // 3.54.0 → 3054000

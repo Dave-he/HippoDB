@@ -4,7 +4,11 @@
 //! - `alloc` — malloc/realloc/free内部 API(本任务 T-0002)
 //! - `pattern` — GLOB/LIKE模式匹配(本任务 T-0003)
 //! - `utf8` — UTF-8 编解码/计数(本任务 T-0004)
+//! - `hash` — 通用 hash table + GrowableArray(本任务 T-0005)
+//! - `str` — 大小写不敏感字符串比较(本任务 T-0006)
 
 pub mod alloc;
+pub mod hash;
 pub mod pattern;
+pub mod str;
 pub mod utf8;

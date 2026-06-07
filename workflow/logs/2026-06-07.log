@@ -194,3 +194,21 @@ test result: FAILED. 58 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out;
 [2026-06-07T13:29:08Z]   T-0003 done: turns=22 cost=$0.833 write/edit=6 bash=9 read=6 text_len=2041 subtype=success
 [2026-06-07T13:29:08Z]   cargo check OK
 [2026-06-07T13:29:09Z]   cargo test OK
+[2026-06-07T13:29:09Z]   committed T-0003
+[2026-06-07T13:29:09Z] === runner end — T-0003 -> done (attempts=2) ===
+[2026-06-07T13:29:09Z]   → event: trigger runner-done (immediate next task)
+[2026-06-07T13:29:09Z]     trigger pid=28072
+[2026-06-07T13:29:09Z] === runner start ===
+[2026-06-07T13:29:09Z] dispatching T-0005: port sqlite3_hash and GrowableArray
+[2026-06-07T13:30:00Z] another runner holds the lock, exiting
+[2026-06-07T13:35:00Z] another runner holds the lock, exiting
+[2026-06-07T13:40:01Z] another runner holds the lock, exiting
+[2026-06-07T13:45:00Z] another runner holds the lock, exiting
+[2026-06-07T13:50:00Z] another runner holds the lock, exiting
+[2026-06-07T13:55:00Z] === runner start ===
+[2026-06-07T13:55:00Z] dispatching T-0006: port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
+[2026-06-07T14:00:00Z] another runner holds the lock, exiting
+[2026-06-07T14:05:00Z] another runner holds the lock, exiting
+[2026-06-07T14:10:00Z] another runner holds the lock, exiting
+[2026-06-07T14:15:00Z] === runner start ===
+[2026-06-07T14:15:00Z] dispatching T-0007: port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)

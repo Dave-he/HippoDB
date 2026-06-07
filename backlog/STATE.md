@@ -1,15 +1,14 @@
 # Backlog State
 
 - **Total tasks**: 15
-- **Done**: 2 (13.3%)
-- **Queued**: 12
+- **Done**: 3 (20.0%)
+- **Queued**: 11
 - **In progress**: 0
 - **Blocked**: 0
 - **Failed**: 0
-- **Last update**: 2026-06-07T13:24:31.846279+00:00
+- **Last update**: 2026-06-07T13:29:09.261513+00:00
 
-## queued (12)
-- `T-0003` [L0/util] port sqlite3_strglob and sqlite3_strlike (pattern matching) — last error: cargo test failed: test result: FAILED. 31 passed; 1 failed. failed tests: util::pattern::tests::strglob_basic, pattern::strlike_mixed_underscore_percent, pattern::strlike_percent_matches_any. fix these specific test failures in src/util/pattern.rs (or wherever the bug is).
+## queued (11)
 - `T-0005` [L0/util] port sqlite3_hash and GrowableArray
 - `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
 - `T-0007` [L0/util] port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)
@@ -22,6 +21,7 @@
 - `T-0014` [L2/tokenize] port tokenizer (SQL lexer)
 - `T-0015` [L2/parse] port Lemon parser generator and parse.y to Rust
 
-## done (2)
+## done (3)
 - `T-0001` [P0/workspace] initialize Rust workspace and minimal FFI shim
 - `T-0002` [L0/util] port sqlite3_malloc family and SqliteError OOM deferred check
+- `T-0003` [L0/util] port sqlite3_strglob and sqlite3_strlike (pattern matching)
