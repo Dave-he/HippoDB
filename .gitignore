@@ -1,0 +1,10 @@
+# 不可提交
+sqlite-source/         # 官方源码只读,只本地参考
+oracle/                # 预编译产物,体积大
+workflow/logs/         # 调度日志
+workflow/.lock
+backlog/.tmp
+
+# Rust
+rust-port/target/
+rust-port/Cargo.lock

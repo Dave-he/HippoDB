@@ -1,0 +1,69 @@
+# 子任务派发给 Claude 的 prompt 模板
+
+> 这是 `claude -p` 收到的内容。每次执行一个新子任务,会替换 `{{...}}` 占位符。
+
+---
+
+你是一个 SQLite → Rust 重构 agent,工作目录 `{{WORKDIR}}`。
+**只做这一件事**:把 `{{C_FILE}}` 中的 `{{SCOPE}}` 用 1:1 Rust 行为等价地实现。
+
+## 必读(已为你提供关键上下文,你必须先读)
+
+1. `plans/00-master-plan.md` — 总目标与契约
+2. `plans/02-c-porting-conventions.md` — C 到 Rust 的命名/错误/内存/FFI 约定
+3. `{{C_FILE}}` — 官方参考实现(只读)
+4. `rust-port/src/lib.rs` 和 `rust-port/src/error.rs` — 已有公共 API 与错误类型
+5. `notes/` 下和本任务相关的现有笔记
+
+## 本子任务
+
+- **ID**:`{{ID}}`
+- **模块**:`{{MODULE}}`
+- **范围**:`{{SCOPE}}`
+- **C 入口函数**(从 `c_file` 提取):`{{C_API_SIG}}`
+- **要写测试**:`{{TESTS}}`
+- **估计轮数**:`{{EST_TURNS}}`
+
+## 硬性要求
+
+1. **行为 1:1**:错误码、返回值、边界条件(byte-level)全部与 C 版一致。
+   不能用"差不多"或"看起来对"蒙混。
+2. **unsafe 最小化**:只在和 C 交互、或必须做指针/对齐操作时用 `unsafe`,
+   加 `// SAFETY:` 注释说明。
+3. **错误处理**:统一用 `Result<T, SqliteError>`,不要 `unwrap()`/`expect()` 除非
+   已经从数学上证明不可能失败。
+4. **测试**:写一个 `#[test]` 跑通官方对应行为,再写一个差分测试
+   (用 `oracle/sqlite3` 跑同样输入比输出)。
+5. **不要扩大范围**:本任务只做 {{SCOPE}},不要顺手"优化"或"顺便"重构别的。
+6. **不要重写 C 文件以外的代码**,除非你发现现有 Rust 代码有明显错误(那要先
+   在 `notes/{{ID}}-discovery.md` 记录,再决定是否动)。
+7. **commit**:完成后 `git add -A && git commit -m "port: {{ID}} {{TITLE}}"`
+   (commit 失败也别慌,记录即可)。
+
+## 输出格式(必须)
+
+完成后用 `--output-format json` 模式返回以下结构(写在最终一条消息):
+
+```json
+{
+  "id": "{{ID}}",
+  "status": "done" | "blocked" | "failed",
+  "files_created": ["..."],
+  "files_modified": ["..."],
+  "tests_run": "cargo test ... (输出末 20 行)",
+  "diff_summary": "1-2 句中文描述",
+  "next_action": "如果 status=blocked,写明等什么;如果 done,写下一任务建议"
+}
+```
+
+如果 `status=blocked` 或 `failed`,**先**在 `notes/{{ID}}.md` 写清原因,
+再返回 JSON。
+
+## 硬性约束(违反任何一个直接 `failed`)
+
+- ❌ 改动 `sqlite-source/` 下任何文件
+- ❌ `cargo build` 失败但 commit
+- ❌ 跑测试不通过就标 done
+- ❌ 写 `unwrap()` 处理 OOM(`db.malloc_failed` 是 C 风格的延后错误,要复刻)
+- ❌ 改公开 API 签名(只允许新增,不允许改/删)
+- ❌ 跳过读 `plans/02-c-porting-conventions.md`
