@@ -212,3 +212,6 @@ test result: FAILED. 58 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out;
 [2026-06-07T14:10:00Z] another runner holds the lock, exiting
 [2026-06-07T14:15:00Z] === runner start ===
 [2026-06-07T14:15:00Z] dispatching T-0007: port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)
+[2026-06-07T14:20:00Z] another runner holds the lock, exiting
+[2026-06-07T14:25:00Z] === runner start ===
+[2026-06-07T14:25:00Z] dispatching T-0005: port sqlite3_hash and GrowableArray

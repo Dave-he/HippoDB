@@ -36,6 +36,16 @@
 - **要写测试**:`tests/util/hash.rs: insert/lookup/delete/resize 100k 元素压测; GrowableArray 边界条件(空/满/倍增/收缩)。`
 - **估计轮数**:`25`
 
+## 上次尝试的反馈 (attempt #1)
+
+你的上一次实现有以下问题:
+
+```
+killed by Hermes due to claude hang; manual hash.rs type fix applied
+```
+
+**请读 `workflow/logs/T-0005-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
+
 
 ## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
 
