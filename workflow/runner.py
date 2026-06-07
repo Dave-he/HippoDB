@@ -460,25 +460,45 @@ def render_state(items: list) -> str:
 
 
 def sanity_build() -> bool:
-    """检查 rust workspace 是否还能编译。如果还没建,返回 True(暂时跳过)。"""
+    """跑 cargo check + cargo test 验证。
+
+    Returns True iff 全过。
+    - cargo check: 编译通过
+    - cargo test: 所有测试通过 (这是 1:1 port 的关键)
+    """
     if not (WORKDIR / "Cargo.toml").exists():
         log("rust workspace not yet initialized; skipping sanity build")
         return True
     try:
         r = subprocess.run(
-            ["cargo", "check", "--workspace"],
-            cwd=WORKDIR,
-            capture_output=True,
-            text=True,
-            timeout=180,
+            ["cargo", "check", "--workspace", "--all-targets"],
+            cwd=WORKDIR, capture_output=True, text=True, timeout=180,
         )
         if r.returncode != 0:
             log(f"  cargo check FAILED:\n{r.stderr[-1500:]}")
             return False
         log("  cargo check OK")
-        return True
     except subprocess.TimeoutExpired:
         log("  cargo check TIMEOUT")
+        return False
+
+    # 跑 test, 任何失败都拒绝 commit
+    try:
+        r = subprocess.run(
+            ["cargo", "test", "--workspace", "--all-targets", "--no-fail-fast"],
+            cwd=WORKDIR, capture_output=True, text=True, timeout=300,
+        )
+        if r.returncode != 0:
+            # 提取失败计数
+            import re
+            m = re.search(r"test result.*?(\d+) passed.*?(\d+) failed", r.stdout + r.stderr)
+            fail_info = m.group(0) if m else "unknown"
+            log(f"  cargo test FAILED ({fail_info}):\n{r.stdout[-1500:]}")
+            return False
+        log("  cargo test OK")
+        return True
+    except subprocess.TimeoutExpired:
+        log("  cargo test TIMEOUT")
         return False
 
 
@@ -520,11 +540,24 @@ def main() -> int:
         update_task(items, task, result)
         write_queue(items)
 
-        # 4. commit
-        git_commit_if_needed(task, result)
+        # 4. sanity FIRST (cargo check + cargo test)
+        #    如果测试不过, 即使 Claude 说 done 也拒绝 commit, 改 status=stalled
+        sanity_ok = sanity_build()
 
-        # 5. sanity
-        sanity_build()
+        # 5. commit (only if sanity passed OR claude said blocked/failed)
+        new_status = result.get("status", "failed")
+        if new_status == "done" and not sanity_ok:
+            log(f"  sanity FAILED → demoting {task['id']} from done to stalled")
+            # rollback status change
+            for t in items:
+                if t["id"] == task["id"]:
+                    t["status"] = "stalled"
+                    t["last_error"] = "cargo test failed; see log"
+                    break
+            write_queue(items)
+            new_status = "stalled"
+            result["status"] = "stalled"
+        git_commit_if_needed(task, result)
 
         # 6. state
         STATE_MD.write_text(render_state(items))
@@ -533,10 +566,45 @@ def main() -> int:
             f"=== runner end — {task['id']} -> {result.get('status')} "
             f"(attempts={task.get('attempts', 0)}) ==="
         )
+
+        # 7. 事件链: 根据结果立即触发下一个动作 (不等 5min cron)
+        # 释放 flock 之后再 trigger, 避免嵌套死锁
+        new_status = result.get("status", "failed")
+        # finally 块会先释放 lock, 然后我们 trigger
+        # 这里只记录 "要 trigger 什么", finally 块实际调用
+        # 改用全局变量
+        global _POST_RUN_TRIGGER
+        _POST_RUN_TRIGGER = new_status
+
         return 0
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
+        # lock 已释放, 现在 trigger 下一步
+        try:
+            trigger_next = _POST_RUN_TRIGGER
+            if trigger_next == "done":
+                log("  → event: trigger runner-done (immediate next task)")
+                subprocess.Popen(
+                    ["bash", str(ROOT / "workflow" / "trigger.sh"), "runner-done"],
+                    cwd=ROOT,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            elif trigger_next in ("failed", "stalled", "discovery"):
+                log(f"  → event: trigger runner-fail (backoff retry)")
+                # 失败任务由 next_task 找到 queued 项重新派
+                subprocess.Popen(
+                    ["bash", str(ROOT / "workflow" / "trigger.sh"), "runner-fail", task.get("id", "")],
+                    cwd=ROOT,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            log(f"  trigger next failed: {e}")
+
+
+_POST_RUN_TRIGGER = None
 
 
 if __name__ == "__main__":

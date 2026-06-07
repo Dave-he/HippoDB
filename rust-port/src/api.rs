@@ -14,6 +14,7 @@ use std::ffi::{c_char, c_int, c_void, CStr};
 
 use crate::error::SqliteError;
 use crate::handle::SqliteDb;
+use crate::util::alloc::Malloc;
 
 /// 返回 SQLite 版本字符串。生命周期 = 进程,不需要 free。
 ///
@@ -98,33 +99,37 @@ pub unsafe extern "C" fn sqlite3_open_v2(
     unsafe { sqlite3_open(filename, pp_db) }
 }
 
-/// `sqlite3_malloc` — 公开 API malloc。P0 桩:用 std::alloc。
+/// `sqlite3_malloc` — 公开 API malloc。thin wrapper 调内部 `Malloc::malloc`。
+///
+/// C 契约(`malloc.c:316-321`):`n<=0` 返回 NULL;`n>SQLITE_MAX_ALLOCATION_SIZE`
+/// 返回 NULL;OOM 返回 NULL,设置 `db->mallocFailed`。
+///
+/// # Safety
+/// - 返回的指针必须用 `sqlite3_free` 释放。
+/// - 不能在 `n` 字节之外读/写。
 #[no_mangle]
 pub unsafe extern "C" fn sqlite3_malloc(n: c_int) -> *mut c_void {
-    if n <= 0 {
-        // C 端: malloc(0) 返回非 null 的"可 free"指针
-        return 1usize as *mut c_void; // 假的非 null 指针,后续 T-0002 会替换
-    }
-    // SAFETY: n > 0 保证 Layout::from_size_align 不会失败(非零 size)。
-    let layout = unsafe { std::alloc::Layout::from_size_align_unchecked(n as usize, 8) };
-    // SAFETY: layout 合法(n>0, 8-byte 对齐),alloc 不 panic 仅返回 null on OOM。
-    unsafe { std::alloc::alloc(layout) as *mut c_void }
+    // n 是 c_int (i32),无 db 关联(公开 API)。thin wrapper,unsafe 仅在内部 API。
+    Malloc::malloc(n as i64 as u64, None) as *mut c_void
 }
 
-/// `sqlite3_malloc64` — 同上但参数是 i64。
+/// `sqlite3_malloc64` — 同上但参数是 i64(对应 C 端 `sqlite3_uint64`)。
+///
+/// C 契约(`malloc.c:322-327`):`n==0` 或 `n>SQLITE_MAX_ALLOCATION_SIZE`
+/// 返回 NULL;OOM 返回 NULL,设置 `db->mallocFailed`。
 #[no_mangle]
 pub unsafe extern "C" fn sqlite3_malloc64(n: i64) -> *mut c_void {
-    // SAFETY: 同 sqlite3_malloc
-    unsafe { sqlite3_malloc(n as c_int) }
+    // thin wrapper,unsafe 仅在内部 API。
+    Malloc::malloc64(n as u64, None) as *mut c_void
 }
 
-/// `sqlite3_free` — 释放。
+/// `sqlite3_free` — 释放。NULL 是 no-op。
+///
+/// C 契约(`malloc.c:391-404`):`p==NULL` 直接 return。
 #[no_mangle]
 pub unsafe extern "C" fn sqlite3_free(p: *mut c_void) {
-    if p.is_null() || p as usize == 1 {
-        return;
-    }
-    // 桩:不实际释放(我们没有跟踪 size)。T-0002 会替换。
+    // thin wrapper,unsafe 仅在内部 API。
+    Malloc::free(p as *mut u8)
 }
 
 // 'static 字符串(嵌入二进制,末尾 \0)

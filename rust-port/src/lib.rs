@@ -9,6 +9,7 @@
 mod api;
 mod error;
 mod handle;
+pub mod util;
 
 pub use api::{
     sqlite3_close, sqlite3_errcode, sqlite3_errmsg, sqlite3_libversion,
@@ -17,6 +18,7 @@ pub use api::{
 };
 pub use error::SqliteError;
 pub use handle::SqliteDb;
+pub use util::alloc::{Malloc, SQLITE_MAX_ALLOCATION_SIZE};
 
 pub const SQLITE_VERSION: &str = env!("SQLITE_VERSION");
 pub const SQLITE_VERSION_NUMBER: i32 = 3_054_000; // 3.54.0 → 3054000

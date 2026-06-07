@@ -53,3 +53,7 @@
 [2026-06-07T12:42:10Z] === runner end — T-0002 -> done (attempts=0) ===
 [2026-06-07T12:45:00Z] === runner start ===
 [2026-06-07T12:45:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:45:51Z] === runner start ===
+[2026-06-07T12:45:51Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:45:51Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:50:01Z] another runner holds the lock, exiting
