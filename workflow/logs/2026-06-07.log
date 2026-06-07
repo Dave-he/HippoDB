@@ -1,0 +1,4 @@
+[2026-06-07T09:29:26Z] === runner start ===
+[2026-06-07T09:29:26Z] dispatching T-0001: initialize Rust workspace and minimal FFI shim
+[2026-06-07T09:29:51Z] rust workspace not yet initialized; skipping sanity build
+[2026-06-07T09:29:51Z] === runner end — T-0001 -> failed (attempts=0) ===

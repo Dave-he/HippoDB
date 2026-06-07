@@ -1,0 +1,27 @@
+[package]
+name = "libsqlite_rs"
+version = "0.1.0"
+edition = "2021"
+description = "1:1 Rust port of SQLite C source"
+license = "Public Domain"
+links = "sqllite_rs"
+publish = false
+
+[lib]
+name = "libsqlite_rs"
+crate-type = ["rlib"]
+
+[features]
+default = []
+# 编译期开关对齐 SQLITE_OMIT_* / SQLITE_ENABLE_* 宏
+omit_load_extension = []
+enable_fts5 = []
+enable_rtree = []
+enable_json1 = []
+
+[dependencies]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[build-dependencies]
