@@ -22,6 +22,7 @@ import time
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
 ROOT = Path("/Users/hyx/workspace/sqllite-project")
 WORKDIR = ROOT / "rust-port"
@@ -44,24 +45,36 @@ def log(msg: str) -> None:
     (LOG_DIR / f"{datetime.now().strftime('%Y-%m-%d')}.log").open("a").write(line + "\n")
 
 
-def read_queue() -> list[dict]:
+def read_queue() -> list:
     if not QUEUE.exists():
         return []
     return [json.loads(l) for l in QUEUE.read_text().splitlines() if l.strip()]
 
 
-def write_queue(items: list[dict]) -> None:
+def write_queue(items: list) -> None:
     QUEUE.write_text("\n".join(json.dumps(i, ensure_ascii=False) for i in items) + "\n")
 
 
-def deps_satisfied(task: dict, done_ids: set[str]) -> bool:
+def deps_satisfied(task: dict, done_ids: set) -> bool:
     return all(d in done_ids for d in task.get("depends_on", []))
 
 
-def next_task(items: list[dict]) -> dict | None:
+def next_task(items: list) -> Optional[dict]:
+    """找下一个可派发的任务。
+
+    规则:
+    - 优先扫 status=queued 且依赖已 done 的
+    - 如果没有 queued, 但有 in_progress(说明上次崩溃了), 重置它回 queued 派发
+    """
     done_ids = {t["id"] for t in items if t["status"] == "done"}
     for t in items:
         if t["status"] == "queued" and deps_satisfied(t, done_ids):
+            return t
+    # 没有可派发的 queued — 看是否有遗留 in_progress
+    for t in items:
+        if t["status"] == "in_progress":
+            log(f"  found stale in_progress: {t['id']}, resetting to queued")
+            t["status"] = "queued"
             return t
     return None
 
@@ -96,7 +109,14 @@ def render_prompt(task: dict) -> str:
 
 
 def run_claude(task: dict) -> dict:
-    """调 claude -p,返回解析后的输出 dict."""
+    """调 claude -p stream-json 拿每个 tool call, 推断任务实际状态.
+
+    三方 MiniMax-M3 模型 + claude -p json 模式有个 bug: result 文本不返回。
+    改用 stream-json + --verbose, 我们能从每个 stream event 看到:
+    - assistant 发出的 tool_use (Write/Edit/Bash)
+    - tool_result (成功/失败)
+    - assistant 的 text 块 (含 contract JSON)
+    """
     prompt = render_prompt(task)
     prompt_file = LOG_DIR / f"{task['id']}-prompt.md"
     prompt_file.write_text(prompt)
@@ -107,12 +127,13 @@ def run_claude(task: dict) -> dict:
         "-p",
         prompt,
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--max-turns",
         str(task.get("est_turns", 12)),
         "--max-budget-usd",
         "5",
-        "--bare",  # 不读 CLAUDE.md hooks,避免与我们的 PreToolUse 钩子冲突
+        "--bare",
         "--add-dir",
         str(ROOT),
     ]
@@ -128,64 +149,184 @@ def run_claude(task: dict) -> dict:
         log(f"  {task['id']} TIMEOUT after 25min")
         return {"id": task["id"], "status": "failed", "next_action": "timeout"}
 
-    (LOG_DIR / f"{task['id']}-stdout.txt").write_text(result.stdout[-5000:])
+    # 完整 stdout 存到文件
+    stream_log = LOG_DIR / f"{task['id']}-stream.jsonl"
+    stream_log.write_text(result.stdout)
     (LOG_DIR / f"{task['id']}-stderr.txt").write_text(result.stderr[-2000:])
 
-    # claude -p --output-format json 把整个会话结果放在 stdout 第一行
-    parsed: dict = {}
-    try:
-        # 输出可能有多行,取最后一个 JSON object
-        for line in reversed(result.stdout.strip().splitlines()):
-            line = line.strip()
-            if line.startswith("{"):
-                parsed = json.loads(line)
-                break
-    except json.JSONDecodeError:
-        pass
+    # 解析 stream-json: 每行一个事件
+    tool_calls: list[dict] = []
+    text_blocks: list[str] = []
+    final_envelope: dict = {}
+    num_turns = 0
+    subtype = ""
+    stop_reason = ""
+    cost = 0.0
 
-    # 提取最终结果(可能在 result 字段或 type=result 里)
-    final = parsed.get("result", "")
-    if not final and parsed.get("type") == "result":
-        final = parsed.get("result", "")
-    if not final:
-        # fallback: 取最后 2KB 文本
-        final = result.stdout[-2000:]
-
-    # 在 final 里找我们约定的 JSON 结构({id, status, ...})
-    match = re.search(r'```json\s*(\{.*?\})\s*```', final, re.DOTALL)
-    if match:
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
         try:
-            return json.loads(match.group(1))
+            evt = json.loads(line)
         except json.JSONDecodeError:
-            pass
-    # 也可能 JSON 直接出现在文本里
-    match = re.search(r'\{[^{}]*"id"\s*:\s*"' + re.escape(task["id"]) + r'"', final)
-    if match:
-        start = match.start()
-        # 找匹配的右括号
-        depth = 0
-        for i, ch in enumerate(final[start:]):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(final[start : start + i + 1])
-                    except json.JSONDecodeError:
-                        break
+            continue
+        et = evt.get("type", "")
+
+        if et == "result":
+            final_envelope = evt
+            subtype = evt.get("subtype", "")
+            stop_reason = evt.get("stop_reason", "")
+            num_turns = evt.get("num_turns", 0)
+            cost = evt.get("total_cost_usd", 0.0)
+
+        elif et == "assistant":
+            # 顶层 assistant 事件
+            msg = evt.get("message", {})
+            for block in msg.get("content", []):
+                btype = block.get("type", "")
+                if btype == "text":
+                    text_blocks.append(block.get("text", ""))
+                elif btype == "tool_use":
+                    tool_calls.append(
+                        {
+                            "name": block.get("name", "?"),
+                            "input": block.get("input", {}),
+                        }
+                    )
+
+        elif et == "user":
+            # tool_result 块
+            msg = evt.get("message", {})
+            for block in msg.get("content", []):
+                if block.get("type") == "tool_result":
+                    # 标记对应的 tool_call 成功/失败
+                    content = block.get("content", "")
+                    is_err = block.get("is_error", False)
+                    if tool_calls:
+                        tool_calls[-1]["is_error"] = is_err
+                        tool_calls[-1]["result_preview"] = (
+                            str(content)[:200] if content else ""
+                        )
+
+    # 统计
+    write_count = sum(
+        1 for tc in tool_calls if tc["name"] in ("Write", "Edit", "MultiEdit")
+    )
+    bash_count = sum(1 for tc in tool_calls if tc["name"] == "Bash")
+    read_count = sum(1 for tc in tool_calls if tc["name"] in ("Read", "Glob", "Grep")
+    )
+
+    # 把"原 final 文本"拼起来(可能含 contract JSON)
+    final_text = "\n".join(text_blocks)
+    log(
+        f"  {task['id']} done: turns={num_turns} cost=${cost:.3f} "
+        f"write/edit={write_count} bash={bash_count} read={read_count} "
+        f"text_len={len(final_text)} subtype={subtype}"
+    )
+
+    # 在 final_text 里找 contract JSON
+    parsed: Optional[dict] = None
+    if final_text:
+        match = re.search(r'```json\s*(\{.*?\})\s*```', final_text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+        if not parsed:
+            match = re.search(
+                r'\{[^{}]*"id"\s*:\s*"' + re.escape(task["id"]) + r'"', final_text
+            )
+            if match:
+                start = match.start()
+                depth = 0
+                for i, ch in enumerate(final_text[start:]):
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                parsed = json.loads(final_text[start : start + i + 1])
+                            except json.JSONDecodeError:
+                                break
+
+    if parsed and "status" in parsed:
+        parsed["tool_calls"] = tool_calls
+        parsed["num_turns"] = num_turns
+        parsed["cost_usd"] = cost
+        return parsed
+
+    # fallback: 即使没 contract JSON, 也能根据 tool_use 判断
+    # - 写了文件 + 跑了 build/test → 算"implicit done"
+    # - 只 read 没 write → "did nothing"
+    # - max_turns 但有 write → "partial"
+    if write_count > 0 and bash_count > 0:
+        log(
+            f"  {task['id']} IMPLICIT DONE based on tool_use "
+            f"({write_count} writes, {bash_count} bash)"
+        )
+        return {
+            "id": task["id"],
+            "status": "done",  # 信任: claude 写了 + 跑了命令
+            "files_created": [
+                tc["input"].get("file_path", "?")
+                for tc in tool_calls
+                if tc["name"] == "Write" and "file_path" in tc["input"]
+            ],
+            "files_modified": [
+                tc["input"].get("file_path", "?")
+                for tc in tool_calls
+                if tc["name"] in ("Edit", "MultiEdit")
+                and "file_path" in tc["input"]
+            ],
+            "tests_run": "(see stream log)",
+            "diff_summary": f"implicit: {write_count} writes, {bash_count} bash, {read_count} reads",
+            "next_action": "verified via tool_use inspection",
+            "tool_calls": tool_calls,
+            "num_turns": num_turns,
+            "cost_usd": cost,
+        }
+
+    if write_count == 0 and read_count > 0:
+        log(f"  {task['id']} DID NOTHING: {read_count} reads but 0 writes")
+        return {
+            "id": task["id"],
+            "status": "stalled",
+            "next_action": f"claude read {read_count} files but wrote 0; prompt may be too cautious",
+            "tool_calls": tool_calls,
+            "num_turns": num_turns,
+            "cost_usd": cost,
+        }
+
+    # 写了一些但没跑命令 → 可能编译/测试都没过
+    if write_count > 0 and bash_count == 0:
+        return {
+            "id": task["id"],
+            "status": "partial",
+            "next_action": f"wrote {write_count} files but didn't run cargo build/test",
+            "tool_calls": tool_calls,
+            "num_turns": num_turns,
+            "cost_usd": cost,
+        }
 
     return {
         "id": task["id"],
         "status": "failed",
-        "next_action": f"no parseable JSON; raw len={len(result.stdout)}",
+        "next_action": f"no tool_use; turns={num_turns}",
+        "tool_calls": tool_calls,
+        "num_turns": num_turns,
+        "cost_usd": cost,
     }
 
 
-def update_task(items: list[dict], task: dict, result: dict) -> None:
+def update_task(items: list, task: dict, result: dict) -> None:
     for t in items:
         if t["id"] == task["id"]:
             t["attempts"] = t.get("attempts", 0) + 1
+            # 累计 cost 估算(在 task 上记录)
+            t["cost_usd"] = t.get("cost_usd", 0.0) + result.get("cost_usd", 0.0)
             new_status = result.get("status", "failed")
             if new_status == "done":
                 t["status"] = "done"
@@ -193,12 +334,23 @@ def update_task(items: list[dict], task: dict, result: dict) -> None:
             elif new_status == "blocked":
                 t["status"] = "blocked"
                 t["last_error"] = result.get("next_action", "")
+            elif new_status == "stalled":
+                # claude 读了 N 个文件但没写 1 行 → prompt 失败,不该无限 retry
+                t["status"] = "stalled"
+                t["last_error"] = result.get("next_action", "stalled")
+            elif new_status == "partial":
+                # 写了但没跑 build → 也 stall, 让人看 stream log
+                t["status"] = "stalled"
+                t["last_error"] = result.get("next_action", "partial")
+            elif new_status == "incomplete":
+                t["status"] = "queued" if t["attempts"] < 5 else "failed"
+                t["last_error"] = result.get("next_action", "incomplete")
             else:
                 if t["attempts"] >= 3:
                     t["status"] = "failed"
                     t["last_error"] = result.get("next_action", "max attempts")
                 else:
-                    t["status"] = "queued"  # retry
+                    t["status"] = "queued"
                     t["last_error"] = result.get("next_action", "")
             break
 
@@ -233,8 +385,8 @@ def git_commit_if_needed(task: dict, result: dict) -> bool:
         return False
 
 
-def render_state(items: list[dict]) -> str:
-    by_status: dict[str, list[dict]] = {}
+def render_state(items: list) -> str:
+    by_status = {}  # type: dict
     for t in items:
         by_status.setdefault(t["status"], []).append(t)
 

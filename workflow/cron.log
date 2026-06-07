@@ -1,0 +1,25 @@
+[2026-06-07T12:15:00Z] === runner start ===
+[2026-06-07T12:15:00Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:15:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+Traceback (most recent call last):
+  File "/Users/hyx/workspace/sqllite-project/workflow/runner.py", line 377, in <module>
+    sys.exit(main())
+  File "/Users/hyx/workspace/sqllite-project/workflow/runner.py", line 350, in main
+    result = run_claude(task)
+  File "/Users/hyx/workspace/sqllite-project/workflow/runner.py", line 133, in run_claude
+    result = subprocess.run(
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 505, in run
+    with Popen(*popenargs, **kwargs) as process:
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 951, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1821, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'claude'
+[2026-06-07T12:20:00Z] === runner start ===
+[2026-06-07T12:20:00Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:20:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:21:32Z]   cargo check OK
+[2026-06-07T12:21:32Z] === runner end — T-0002 -> failed (attempts=1) ===
+[2026-06-07T12:25:00Z] === runner start ===
+[2026-06-07T12:25:00Z] no task with satisfied deps; will wait for blocker resolution
+[2026-06-07T12:30:00Z] another runner holds the lock, exiting

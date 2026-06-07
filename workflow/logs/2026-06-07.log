@@ -2,3 +2,36 @@
 [2026-06-07T09:29:26Z] dispatching T-0001: initialize Rust workspace and minimal FFI shim
 [2026-06-07T09:29:51Z] rust workspace not yet initialized; skipping sanity build
 [2026-06-07T09:29:51Z] === runner end — T-0001 -> failed (attempts=0) ===
+[2026-06-07T12:00:54Z] === runner start ===
+[2026-06-07T12:00:54Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:01:47Z]   cargo check OK
+[2026-06-07T12:01:47Z] === runner end — T-0002 -> failed (attempts=0) ===
+[2026-06-07T12:04:04Z] === runner start ===
+[2026-06-07T12:04:04Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:05:00Z] another runner holds the lock, exiting
+[2026-06-07T12:10:00Z] === runner start ===
+[2026-06-07T12:10:00Z] no task with satisfied deps; will wait for blocker resolution
+[2026-06-07T12:11:23Z] === runner start ===
+[2026-06-07T12:11:23Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:11:23Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:15:00Z] === runner start ===
+[2026-06-07T12:15:00Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:15:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:20:00Z] === runner start ===
+[2026-06-07T12:20:00Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:20:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:20:49Z] another runner holds the lock, exiting
+[2026-06-07T12:21:02Z] === runner start ===
+[2026-06-07T12:21:02Z]   found stale in_progress: T-0002, resetting to queued
+[2026-06-07T12:21:02Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:21:32Z]   cargo check OK
+[2026-06-07T12:21:32Z] === runner end — T-0002 -> failed (attempts=1) ===
+[2026-06-07T12:22:36Z]   cargo check OK
+[2026-06-07T12:22:36Z] === runner end — T-0002 -> failed (attempts=1) ===
+[2026-06-07T12:25:00Z] === runner start ===
+[2026-06-07T12:25:00Z] no task with satisfied deps; will wait for blocker resolution
+[2026-06-07T12:26:15Z] === runner start ===
+[2026-06-07T12:26:15Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:30:00Z] another runner holds the lock, exiting
+[2026-06-07T12:34:49Z]   T-0002 done: turns=26 cost=$1.476 write/edit=1 bash=21 read=13 text_len=99 subtype=error_max_turns
+[2026-06-07T12:34:49Z]   T-0002 IMPLICIT DONE based on tool_use (1 writes, 21 bash)
