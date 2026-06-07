@@ -6,10 +6,10 @@
 - **In progress**: 0
 - **Blocked**: 0
 - **Failed**: 0
-- **Last update**: 2026-06-07T13:08:49.318078+00:00
+- **Last update**: 2026-06-07T13:24:31.846279+00:00
 
 ## queued (12)
-- `T-0004` [L0/util] port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+- `T-0003` [L0/util] port sqlite3_strglob and sqlite3_strlike (pattern matching) — last error: cargo test failed: test result: FAILED. 31 passed; 1 failed. failed tests: util::pattern::tests::strglob_basic, pattern::strlike_mixed_underscore_percent, pattern::strlike_percent_matches_any. fix these specific test failures in src/util/pattern.rs (or wherever the bug is).
 - `T-0005` [L0/util] port sqlite3_hash and GrowableArray
 - `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
 - `T-0007` [L0/util] port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)

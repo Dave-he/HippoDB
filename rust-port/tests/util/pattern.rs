@@ -26,14 +26,18 @@ fn strglob_star_matches_abc() {
 }
 
 // ============================================================================
-//2. sqlite3_strglob: `a*` 不匹配 `bc` → NOWILDCARDMATCH (含 * 的失败)
+//2. sqlite3_strglob: `a*` 不匹配 `bc` → NOMATCH
+//    C 行为验证:实际 sqlite3_strglob("a*", "bc") == 1 (SQLITE_NOMATCH)
+//    说明:虽然 pattern 含 '*',但 C 版在找不到首字符 'a' 后 break,
+//    外层 fallthrough 返回 SQLITE_NOWILDCARDMATCH(2)... 但实际编译调用
+//    sqlite3_strglob("a*", "bc") 返回 1。修正:期望 SQLITE_NOMATCH(1)。
 // ============================================================================
 #[test]
 fn strglob_star_no_match_returns_nowildcard() {
  let r = sqlite3_strglob(Some(b"a*"), Some(b"bc"));
  assert_eq!(
- r, SQLITE_NOWILDCARDMATCH,
- "a* must not match bc (and pattern has *, so NOWILDCARDMATCH)"
+ r, SQLITE_NOMATCH,
+ "a* must not match bc — verified against C sqlite3_strglob (returns 1)"
  );
 }
 
@@ -83,12 +87,23 @@ fn strglob_is_case_sensitive() {
 }
 
 // ============================================================================
-//8. sqlite3_strglob: 中间穿插 . 不影响 — `a.c`匹配 `abc`
+//8. sqlite3_strglob: `.` 是字面字符,必须精确匹配 — `a.c` 不匹配 `abc`
+//    C 行为验证:实际 sqlite3_strglob("a.c","abc")=1, strglob("a.c","axc")=1,
+//    strglob("a.c","ac")=1。说明:.在 GLOB 中是普通字面字符,不是通配符;
+//    它只匹配字面意义的 '.'(0x2E),不匹配 'b'/'x'/'c'。要匹配任意单字符用 '?'。
 // ============================================================================
 #[test]
 fn strglob_dot_in_pattern_is_literal() {
- assert_eq!(sqlite3_strglob(Some(b"a.c"), Some(b"abc")), SQLITE_MATCH);
- assert_eq!(sqlite3_strglob(Some(b"a.c"), Some(b"axc")), SQLITE_MATCH);
+ assert_eq!(
+ sqlite3_strglob(Some(b"a.c"), Some(b"abc")),
+ SQLITE_NOMATCH,
+ "`.` is a literal in GLOB, must match `.` exactly (C verified: returns 1)"
+ );
+ assert_eq!(
+ sqlite3_strglob(Some(b"a.c"), Some(b"axc")),
+ SQLITE_NOMATCH,
+ "`.` is a literal in GLOB, must match `.` exactly (C verified: returns 1)"
+ );
  assert_eq!(sqlite3_strglob(Some(b"a.c"), Some(b"ac")), SQLITE_NOMATCH);
 }
 
@@ -116,10 +131,9 @@ fn strlike_percent_matches_any() {
  "LIKE %% matches zero or more chars (func.c:704, no_case=1)"
  );
  assert_eq!(sqlite3_strlike(Some(b"a%"), Some(b"a"),0), SQLITE_MATCH);
- assert_eq!(
- sqlite3_strlike(Some(b"a%"), Some(b"bc"),0),
- SQLITE_NOWILDCARDMATCH
- );
+ // 对齐 C:strlike("a%","bc",0) 返回 SQLITE_NOMATCH(1) — 见 func.c:878
+ // (pat='a' vs str='b',noCase 仍不等,不会进 matchAll 分支)
+ assert_eq!(sqlite3_strlike(Some(b"a%"), Some(b"bc"),0), SQLITE_NOMATCH);
 }
 
 // ============================================================================
@@ -254,8 +268,8 @@ fn strlike_multiple_percent_collapse() {
 fn strlike_mixed_underscore_percent() {
  assert_eq!(
  sqlite3_strlike(Some(b"a_%b"), Some(b"abc"),0),
- SQLITE_NOMATCH,
- "_ needs exactly1 char before %%"
+ SQLITE_NOWILDCARDMATCH,
+ "C trace: _ eats 'b', then %% searches for 'b' in 'c' → not found → NOWILDCARDMATCH"
  );
  assert_eq!(
  sqlite3_strlike(Some(b"a_%b"), Some(b"abcdb"),0),

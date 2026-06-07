@@ -123,3 +123,71 @@ test result: FAILED. 27 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out;
 [2026-06-07T13:09:49Z] === runner start ===
 [2026-06-07T13:09:49Z] dispatching T-0004: port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
 [2026-06-07T13:10:01Z] another runner holds the lock, exiting
+[2026-06-07T13:15:00Z] another runner holds the lock, exiting
+[2026-06-07T13:17:52Z]   T-0004 done: turns=55 cost=$1.847 write/edit=9 bash=17 read=13 text_len=1699 subtype=success
+[2026-06-07T13:17:52Z]   cargo check OK
+[2026-06-07T13:17:53Z]   cargo test FAILED (test result: FAILED. 31 passed; 1 failed):
+f8::write_four_byte ... ok
+test utf8::write_read_roundtrip_boundaries ... ok
+test utf8::write_three_byte ... ok
+test utf8::write_two_byte ... ok
+
+failures:
+
+---- pattern::strglob_dot_in_pattern_is_literal stdout ----
+
+thread 'pattern::strglob_dot_in_pattern_is_literal' (1146740) panicked at tests/util/pattern.rs:90:2:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pattern::strglob_star_no_match_returns_nowildcard stdout ----
+
+thread 'pattern::strglob_star_no_match_returns_nowildcard' (1146750) panicked at tests/util/pattern.rs:34:2:
+assertion `left == right` failed: a* must not match bc (and pattern has *, so NOWILDCARDMATCH)
+  left: 1
+ right: 2
+
+---- pattern::strlike_mixed_underscore_percent stdout ----
+
+thread 'pattern::strlike_mixed_underscore_percent' (1146756) panicked at tests/util/pattern.rs:255:2:
+assertion `left == right` failed: _ needs exactly1 char before %%
+  left: 2
+ right: 1
+
+---- pattern::strlike_percent_matches_any stdout ----
+
+thread 'pattern::strlike_percent_matches_any' (1146759) panicked at tests/util/pattern.rs:119:2:
+assertion `left == right` failed
+  left: 1
+ right: 2
+
+
+failures:
+    pattern::strglob_dot_in_pattern_is_literal
+    pattern::strglob_star_no_match_returns_nowildcard
+    pattern::strlike_mixed_underscore_percent
+    pattern::strlike_percent_matches_any
+
+test result: FAILED. 58 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[2026-06-07T13:17:53Z]   sanity FAILED → demoting T-0004 from done to stalled
+[2026-06-07T13:17:53Z] === runner end — T-0004 -> stalled (attempts=0) ===
+[2026-06-07T13:17:53Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-07T13:17:53Z]     trigger pid=26254
+[2026-06-07T13:18:53Z] === runner start ===
+[2026-06-07T13:18:53Z] dispatching T-0003: port sqlite3_strglob and sqlite3_strlike (pattern matching)
+[2026-06-07T13:20:00Z] another runner holds the lock, exiting
+[2026-06-07T13:24:31Z]   T-0003 done: turns=21 cost=$1.058 write/edit=3 bash=14 read=10 text_len=353 subtype=error_max_turns
+[2026-06-07T13:24:31Z]   T-0003 IMPLICIT DONE based on tool_use (3 code writes, 14 bash)
+[2026-06-07T13:24:31Z]   cargo check OK
+[2026-06-07T13:24:31Z]   cargo test FAILED (test result: FAILED. 31 passed; 1 failed):
+[2026-06-07T13:24:31Z]     - util::pattern::tests::strglob_basic
+[2026-06-07T13:24:31Z]     - pattern::strlike_mixed_underscore_percent
+[2026-06-07T13:24:31Z]     - pattern::strlike_percent_matches_any
+[2026-06-07T13:24:31Z]   sanity FAILED → demoting T-0003 from done to queued (with cargo test feedback)
+[2026-06-07T13:24:31Z] === runner end — T-0003 -> queued (attempts=1) ===
+[2026-06-07T13:25:00Z] === runner start ===
+[2026-06-07T13:25:00Z] dispatching T-0003: port sqlite3_strglob and sqlite3_strlike (pattern matching)

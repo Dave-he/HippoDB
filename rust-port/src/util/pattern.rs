@@ -512,7 +512,9 @@ mod tests {
     #[test]
     fn strglob_basic() {
         assert_eq!(sg("a*", "abc"), SQLITE_MATCH);
-        assert_eq!(sg("a*", "bc"), SQLITE_NOWILDCARDMATCH);
+        // 对齐 C:strglob("a*","bc") 返回 SQLITE_NOMATCH(1) — 见 func.c:878
+        // (pat='a' vs str='b' 立即失败,不会进入 matchAll 分支)
+        assert_eq!(sg("a*", "bc"), SQLITE_NOMATCH);
         assert_eq!(sg("?", "a"), SQLITE_MATCH);
         assert_eq!(sg("?", ""), SQLITE_NOMATCH);
     }

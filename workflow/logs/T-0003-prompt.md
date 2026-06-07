@@ -25,6 +25,17 @@
 - **要写测试**:`tests/util/pattern.rs: 12+ 用例对比 C 行为: 'a*' 匹配 'abc' 返回 SQLITE_OK(0); 不匹配返回 SQLITE_NOMATCH(27); 空 pattern 匹配空串; ? 匹配单字符; ESCAPE 字符转义 *; 中间穿插 . 等。`
 - **估计轮数**:`20`
 
+## 上次尝试的反馈 (attempt #2)
+
+你的上一次实现有以下问题:
+
+```
+cargo test failed: test result: FAILED. 31 passed; 1 failed. failed tests: util::pattern::tests::strglob_basic, pattern::strlike_mixed_underscore_percent, pattern::strlike_percent_matches_any. fix these specific test failures in src/util/pattern.rs (or wherever the bug is).
+```
+
+**请读 `workflow/logs/T-0003-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
+
+
 ## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
 
 1. **第一轮就写代码,不要通读**。你最多花 2 轮(Read + Glob)理解上下文,然后**立刻 Write**。
