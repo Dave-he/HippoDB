@@ -5,32 +5,38 @@
 ---
 
 你是一个 SQLite → Rust 重构 agent,工作目录 `/Users/hyx/workspace/sqllite-project/rust-port`。
-**只做这一件事**:把 `sqlite-source/src/util.c` 中的 `实现 src/util/pattern.rs: sqlite3_strglob(const char *zGlob, const char *zStr) -> i32, sqlite3_strlike(const char *zPattern, const char *zStr, u32 esc) -> i32。支持通配符 * 和 ?,以及 strlike 的 ESCAPE 字符。行为与 C 版 byte-for-byte 一致(包括大小写敏感性默认,以及 ESCAPE 0 行为)。在 src/util/mod.rs 加 pub mod pattern; 并在 lib.rs 注册。` 用 1:1 Rust 行为等价地实现。
+**只做这一件事**:把 `sqlite-source/src/utf.c` 中的 `实现 src/util/utf8.rs: utf8_read(ptr) -> (char, byte_len), utf8_write(buf, c, n) -> byte_len, utf8_char_count(s) -> 字符数。正确处理 1-4 字节 UTF-8(包括 surrogate pair 拒绝、overlong 拒绝、5+ 字节拒绝)。在 src/util/mod.rs 加 pub mod utf8。` 用 1:1 Rust 行为等价地实现。
 
 ## 必读(已为你提供关键上下文,你必须先读)
 
 1. `plans/00-master-plan.md` — 总目标与契约
 2. `plans/02-c-porting-conventions.md` — C 到 Rust 的命名/错误/内存/FFI 约定
-3. `sqlite-source/src/util.c` — 官方参考实现(只读)
+3. `sqlite-source/src/utf.c` — 官方参考实现(只读)
 4. `rust-port/src/lib.rs` 和 `rust-port/src/error.rs` — 已有公共 API 与错误类型
-5. `notes/T-0003.md` — 本任务已有的笔记(可能含之前的发现/spec 修正)
+5. `notes/T-0004.md` — 本任务已有的笔记(可能含之前的发现/spec 修正)
 6. `rust-port/src/` — 现有所有 Rust 代码(已 done 的任务产物)
 
 ## 本子任务
 
-- **ID**:`T-0003`
+- **ID**:`T-0004`
 - **模块**:`L0/util`
-- **范围**:`实现 src/util/pattern.rs: sqlite3_strglob(const char *zGlob, const char *zStr) -> i32, sqlite3_strlike(const char *zPattern, const char *zStr, u32 esc) -> i32。支持通配符 * 和 ?,以及 strlike 的 ESCAPE 字符。行为与 C 版 byte-for-byte 一致(包括大小写敏感性默认,以及 ESCAPE 0 行为)。在 src/util/mod.rs 加 pub mod pattern; 并在 lib.rs 注册。`
-- **C 入口函数**(从 `c_file` 提取):`int sqlite3FaultSim(int iTest) | int sqlite3IsNaN(double x) | int sqlite3IsOverflow(double x) | int sqlite3Strlen30(const char *z) | char *sqlite3ColumnType(Column *pCol, char *zDflt) | static SQLITE_NOINLINE void  sqlite3ErrorFinish(sqlite3 *db, int err_code) | void sqlite3Error(sqlite3 *db, int err_code) | void sqlite3ErrorClear(sqlite3 *db)`
-- **要写测试**:`tests/util/pattern.rs: 12+ 用例对比 C 行为: 'a*' 匹配 'abc' 返回 SQLITE_OK(0); 不匹配返回 SQLITE_NOMATCH(27); 空 pattern 匹配空串; ? 匹配单字符; ESCAPE 字符转义 *; 中间穿插 . 等。`
+- **范围**:`实现 src/util/utf8.rs: utf8_read(ptr) -> (char, byte_len), utf8_write(buf, c, n) -> byte_len, utf8_char_count(s) -> 字符数。正确处理 1-4 字节 UTF-8(包括 surrogate pair 拒绝、overlong 拒绝、5+ 字节拒绝)。在 src/util/mod.rs 加 pub mod utf8。`
+- **C 入口函数**(从 `c_file` 提取):`int sqlite3AppendOneUtf8Character(char *zOut, u32 v) | u32 sqlite3Utf8Read(
+  const unsigned char **pz    /* Pointer to string from which to read char */
+) | int sqlite3Utf8ReadLimited(
+  const u8 *z,
+  int n,
+  u32 *piOut
+) | SQLITE_NOINLINE int sqlite3VdbeMemTranslate(Mem *pMem, u8 desiredEnc) | int sqlite3VdbeMemHandleBom(Mem *pMem) | int sqlite3Utf8CharLen(const char *zIn, int nByte) | int sqlite3Utf8To8(unsigned char *zIn) | char *sqlite3Utf16to8(sqlite3 *db, const void *z, int nByte, u8 enc)`
+- **要写测试**:`tests/util/utf8.rs: 12+ 用例,包括 ASCII / 2-byte / 3-byte / 4-byte 字符 / 截断序列 / surrogate 拒绝 / overlong 拒绝 / 空串。`
 - **估计轮数**:`20`
 
 ## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
 
 1. **第一轮就写代码,不要通读**。你最多花 2 轮(Read + Glob)理解上下文,然后**立刻 Write**。
    如果你读 10+ 文件还不写任何东西, 任务会被判 stalled。
-2. **如果任务 spec 与 C 源码不一致,优先 C 源码**(`sqlite-source/src/util.c` 是真相源)。
-   在 `notes/T-0003-discovery.md` 写 5 行说明, 然后**继续按 C 源码实现,不要停下来**。
+2. **如果任务 spec 与 C 源码不一致,优先 C 源码**(`sqlite-source/src/utf.c` 是真相源)。
+   在 `notes/T-0004-discovery.md` 写 5 行说明, 然后**继续按 C 源码实现,不要停下来**。
 3. **如果现有桩代码错了(比如 T-0001 的 malloc(0) 假非 null 指针),直接替换它**,
    不要保留旧行为。
 4. **写完代码后必须跑 `cargo check` 和 `cargo test`**, 在返回的 JSON 里报告结果。
@@ -45,10 +51,10 @@
    已经从数学上证明不可能失败。
 4. **测试**:写一个 `#[test]` 跑通官方对应行为,再写一个差分测试
    (用 `oracle/sqlite3` 跑同样输入比输出)。
-5. **不要扩大范围**:本任务只做 实现 src/util/pattern.rs: sqlite3_strglob(const char *zGlob, const char *zStr) -> i32, sqlite3_strlike(const char *zPattern, const char *zStr, u32 esc) -> i32。支持通配符 * 和 ?,以及 strlike 的 ESCAPE 字符。行为与 C 版 byte-for-byte 一致(包括大小写敏感性默认,以及 ESCAPE 0 行为)。在 src/util/mod.rs 加 pub mod pattern; 并在 lib.rs 注册。,不要顺手"优化"或"顺便"重构别的。
+5. **不要扩大范围**:本任务只做 实现 src/util/utf8.rs: utf8_read(ptr) -> (char, byte_len), utf8_write(buf, c, n) -> byte_len, utf8_char_count(s) -> 字符数。正确处理 1-4 字节 UTF-8(包括 surrogate pair 拒绝、overlong 拒绝、5+ 字节拒绝)。在 src/util/mod.rs 加 pub mod utf8。,不要顺手"优化"或"顺便"重构别的。
 6. **不要重写 C 文件以外的代码**,除非你发现现有 Rust 代码有明显错误(那要先
-   在 `notes/T-0003-discovery.md` 记录,再决定是否动)。
-7. **commit**:完成后 `git add -A && git commit -m "port: T-0003 port sqlite3_strglob and sqlite3_strlike (pattern matching)"`
+   在 `notes/T-0004-discovery.md` 记录,再决定是否动)。
+7. **commit**:完成后 `git add -A && git commit -m "port: T-0004 port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)"`
    (commit 失败也别慌,记录即可)。
 
 ## 输出格式(必须)
@@ -57,7 +63,7 @@
 
 ```json
 {
-  "id": "T-0003",
+  "id": "T-0004",
   "status": "done" | "blocked" | "failed",
   "files_created": ["..."],
   "files_modified": ["..."],
@@ -67,7 +73,7 @@
 }
 ```
 
-如果 `status=blocked` 或 `failed`,**先**在 `notes/T-0003.md` 写清原因,
+如果 `status=blocked` 或 `failed`,**先**在 `notes/T-0004.md` 写清原因,
 再返回 JSON。
 
 ## 硬性约束(违反任何一个直接 `failed`)

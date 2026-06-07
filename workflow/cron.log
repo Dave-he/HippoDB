@@ -41,3 +41,6 @@ FileNotFoundError: [Errno 2] No such file or directory: 'claude'
 [2026-06-07T12:45:00Z] === runner start ===
 [2026-06-07T12:45:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
 [2026-06-07T12:50:01Z] another runner holds the lock, exiting
+[2026-06-07T13:00:00Z] another runner holds the lock, exiting
+[2026-06-07T13:05:00Z] another runner holds the lock, exiting
+[2026-06-07T13:10:01Z] another runner holds the lock, exiting

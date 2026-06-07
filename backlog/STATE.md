@@ -1,33 +1,27 @@
 # Backlog State
 
 - **Total tasks**: 15
-- **Done**: 1
-- **Queued**: 14
-- **Stalled**: 0
+- **Done**: 2 (13.3%)
+- **Queued**: 12
 - **In progress**: 0
-- **Last update**: 2026-06-07T20:52:00Z
+- **Blocked**: 0
+- **Failed**: 0
+- **Last update**: 2026-06-07T13:08:49.318078+00:00
 
-## done (1)
+## queued (12)
+- `T-0004` [L0/util] port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+- `T-0005` [L0/util] port sqlite3_hash and GrowableArray
+- `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
+- `T-0007` [L0/util] port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)
+- `T-0008` [L0/util] port sqlite3_randomness (PRNG)
+- `T-0009` [L0/util] port date/time functions (julianday, strftime, current_time)
+- `T-0010` [L1/os] port OS VFS interface and unix VFS (slim subset: open/close/read/write)
+- `T-0011` [L1/pager] port Pager struct and page cache (read path only, no write/journalling)
+- `T-0012` [L1/pager] port Pager write path with rollback journal
+- `T-0013` [L1/btree] port B-Tree read path (open cursor, first/next, key fetch)
+- `T-0014` [L2/tokenize] port tokenizer (SQL lexer)
+- `T-0015` [L2/parse] port Lemon parser generator and parse.y to Rust
+
+## done (2)
 - `T-0001` [P0/workspace] initialize Rust workspace and minimal FFI shim
-  — 8 FFI functions, 14 tests passing, commit 200c475
-
-## queued (14)
-- `T-0002` (新 spec, 严格对齐 C malloc.c; 等待 runner 重派)
-- `T-0003` through `T-0015`
-
-## Event-driven 升级 (commit 976bc83 + 最新未提交)
-
-新增组件:
-- `workflow/event_router.py` — 4 类事件源路由: runner-fail/runner-done/gh-pr/gh-actions
-- `workflow/trigger.sh` — 事件触发 wrapper
-- `workflow/gh_poller.py` — GitHub PR + Actions 状态 polling (替代 webhook)
-- `workflow/run-gh-poller.sh` — poller 包装 (cron 5min)
-
-Runner 增强:
-- 派发完成后自动 trigger 下一步 (不等 cron 5min)
-- sanity_build 现在跑 `cargo check` + `cargo test` (之前只 check)
-- 测试失败时把 done demote 成 stalled, 阻止 commit 假 done
-
-注册 cron:
-- */5 * * * * workflow/run-once.sh       (主 runner)
-- */5 * * * * workflow/run-gh-poller.sh  (GitHub poller)
+- `T-0002` [L0/util] port sqlite3_malloc family and SqliteError OOM deferred check

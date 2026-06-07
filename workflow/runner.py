@@ -94,6 +94,17 @@ def render_prompt(task: dict) -> str:
         if sigs:
             api_sig = " | ".join(s.replace("{", "").strip() for s in sigs[:8])
 
+    # 上次失败的反馈(从 queue.jsonl 拉, 让 Claude 知道哪错了)
+    last_error_block = ""
+    le = task.get("last_error")
+    if le and task.get("attempts", 0) > 0:
+        last_error_block = (
+            f"\n## 上次尝试的反馈 (attempt #{task.get('attempts')})\n\n"
+            f"你的上一次实现有以下问题:\n\n```\n{le}\n```\n\n"
+            f"**请读 `workflow/logs/{task['id']}-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, "
+            f"**先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。\n"
+        )
+
     return (
         PROMPT_TPL
         .replace("{{WORKDIR}}", str(WORKDIR))
@@ -105,6 +116,7 @@ def render_prompt(task: dict) -> str:
         .replace("{{TESTS}}", task["tests"])
         .replace("{{EST_TURNS}}", str(task.get("est_turns", 12)))
         .replace("{{TITLE}}", task["title"])
+        .replace("{{LAST_ERROR}}", last_error_block)
     )
 
 
@@ -374,10 +386,17 @@ def update_task(items: list, task: dict, result: dict) -> None:
                 t["status"] = "blocked"
                 t["last_error"] = result.get("next_action", "")
             elif new_status == "stalled":
-                t["status"] = "stalled"
+                # 5 次失败后放弃; 否则仍留 queued 让下轮 cron 重试
+                if t["attempts"] >= 5:
+                    t["status"] = "stalled"
+                else:
+                    t["status"] = "queued"
                 t["last_error"] = result.get("next_action", "stalled")
             elif new_status == "partial":
-                t["status"] = "stalled"
+                if t["attempts"] >= 5:
+                    t["status"] = "stalled"
+                else:
+                    t["status"] = "queued"
                 t["last_error"] = result.get("next_action", "partial")
             elif new_status == "discovery":
                 # claude 写了 notes/* 没写代码 → spec 可能有错或 agent 困惑,等人 review
@@ -493,12 +512,28 @@ def sanity_build() -> bool:
             import re
             m = re.search(r"test result.*?(\d+) passed.*?(\d+) failed", r.stdout + r.stderr)
             fail_info = m.group(0) if m else "unknown"
-            log(f"  cargo test FAILED ({fail_info}):\n{r.stdout[-1500:]}")
+
+            # 提取失败的具体测试名 (前 10 个)
+            failed_names = re.findall(r"^---- (\S+) stdout", r.stdout + r.stderr, re.MULTILINE)
+            failed_summary = ", ".join(failed_names[:10])
+
+            log(f"  cargo test FAILED ({fail_info}):")
+            for fn in failed_names[:5]:
+                log(f"    - {fn}")
+
+            # 写进 last_error 字典, 让 demote 时能传给 task
+            sanity_build.last_error = (
+                f"cargo test failed: {fail_info}. failed tests: {failed_summary}. "
+                f"fix these specific test failures in src/util/pattern.rs (or wherever the bug is)."
+            )
             return False
         log("  cargo test OK")
+        # 清掉上次的错误
+        sanity_build.last_error = None
         return True
     except subprocess.TimeoutExpired:
         log("  cargo test TIMEOUT")
+        sanity_build.last_error = "cargo test timeout"
         return False
 
 
@@ -547,16 +582,15 @@ def main() -> int:
         # 5. commit (only if sanity passed OR claude said blocked/failed)
         new_status = result.get("status", "failed")
         if new_status == "done" and not sanity_ok:
-            log(f"  sanity FAILED → demoting {task['id']} from done to stalled")
-            # rollback status change
+            log(f"  sanity FAILED → demoting {task['id']} from done to queued (with cargo test feedback)")
             for t in items:
                 if t["id"] == task["id"]:
-                    t["status"] = "stalled"
-                    t["last_error"] = "cargo test failed; see log"
+                    t["status"] = "queued" if t.get("attempts", 0) < 5 else "stalled"
+                    t["last_error"] = getattr(sanity_build, "last_error", "cargo test failed")
                     break
             write_queue(items)
-            new_status = "stalled"
-            result["status"] = "stalled"
+            new_status = "queued"
+            result["status"] = "queued"
         git_commit_if_needed(task, result)
 
         # 6. state
@@ -585,21 +619,22 @@ def main() -> int:
             trigger_next = _POST_RUN_TRIGGER
             if trigger_next == "done":
                 log("  → event: trigger runner-done (immediate next task)")
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     ["bash", str(ROOT / "workflow" / "trigger.sh"), "runner-done"],
                     cwd=ROOT,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=open(LOG_DIR / "trigger.out", "a"),
+                    stderr=open(LOG_DIR / "trigger.err", "a"),
                 )
+                log(f"    trigger pid={proc.pid}")
             elif trigger_next in ("failed", "stalled", "discovery"):
                 log(f"  → event: trigger runner-fail (backoff retry)")
-                # 失败任务由 next_task 找到 queued 项重新派
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     ["bash", str(ROOT / "workflow" / "trigger.sh"), "runner-fail", task.get("id", "")],
                     cwd=ROOT,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=open(LOG_DIR / "trigger.out", "a"),
+                    stderr=open(LOG_DIR / "trigger.err", "a"),
                 )
+                log(f"    trigger pid={proc.pid}")
         except Exception as e:
             log(f"  trigger next failed: {e}")
 

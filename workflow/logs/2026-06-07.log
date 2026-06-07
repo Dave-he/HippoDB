@@ -60,3 +60,66 @@
 [2026-06-07T12:54:26Z]   T-0002 done: turns=26 cost=$1.724 write/edit=29 bash=14 read=16 text_len=171 subtype=error_max_turns
 [2026-06-07T12:54:26Z]   T-0002 IMPLICIT DONE based on tool_use (29 code writes, 14 bash)
 [2026-06-07T12:56:43Z]   T-0002 done: turns=66 cost=$2.050 write/edit=8 bash=21 read=18 text_len=2927 subtype=success
+[2026-06-07T12:56:43Z]   committed T-0002
+[2026-06-07T12:56:43Z]   cargo check OK
+[2026-06-07T12:56:43Z] === runner end — T-0002 -> done (attempts=0) ===
+[2026-06-07T13:00:00Z] another runner holds the lock, exiting
+[2026-06-07T13:05:00Z] another runner holds the lock, exiting
+[2026-06-07T13:05:30Z] === runner start ===
+[2026-06-07T13:05:30Z] dispatching T-0003: port sqlite3_strglob and sqlite3_strlike (pattern matching)
+[2026-06-07T13:08:48Z]   T-0003 done: turns=21 cost=$0.960 write/edit=5 bash=15 read=11 text_len=157 subtype=error_max_turns
+[2026-06-07T13:08:48Z]   T-0003 IMPLICIT DONE based on tool_use (5 code writes, 15 bash)
+[2026-06-07T13:08:48Z]   cargo check OK
+[2026-06-07T13:08:49Z]   cargo test FAILED (test result: FAILED. 13 passed; 1 failed):
+pattern::strlike_underscore_matches_single ... ok
+test pattern::strlike_utf8_literal ... ok
+test pattern::strlike_percent_matches_any ... FAILED
+
+failures:
+
+---- pattern::strglob_dot_in_pattern_is_literal stdout ----
+
+thread 'pattern::strglob_dot_in_pattern_is_literal' (1126398) panicked at tests/util/pattern.rs:90:2:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pattern::strglob_star_no_match_returns_nowildcard stdout ----
+
+thread 'pattern::strglob_star_no_match_returns_nowildcard' (1126408) panicked at tests/util/pattern.rs:34:2:
+assertion `left == right` failed: a* must not match bc (and pattern has *, so NOWILDCARDMATCH)
+  left: 1
+ right: 2
+
+---- pattern::strlike_mixed_underscore_percent stdout ----
+
+thread 'pattern::strlike_mixed_underscore_percent' (1126414) panicked at tests/util/pattern.rs:255:2:
+assertion `left == right` failed: _ needs exactly1 char before %%
+  left: 2
+ right: 1
+
+---- pattern::strlike_percent_matches_any stdout ----
+
+thread 'pattern::strlike_percent_matches_any' (1126417) panicked at tests/util/pattern.rs:119:2:
+assertion `left == right` failed
+  left: 1
+ right: 2
+
+
+failures:
+    pattern::strglob_dot_in_pattern_is_literal
+    pattern::strglob_star_no_match_returns_nowildcard
+    pattern::strlike_mixed_underscore_percent
+    pattern::strlike_percent_matches_any
+
+test result: FAILED. 27 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[2026-06-07T13:08:49Z]   sanity FAILED → demoting T-0003 from done to stalled
+[2026-06-07T13:08:49Z] === runner end — T-0003 -> stalled (attempts=0) ===
+[2026-06-07T13:08:49Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-07T13:08:49Z]     trigger pid=24226
+[2026-06-07T13:09:49Z] === runner start ===
+[2026-06-07T13:09:49Z] dispatching T-0004: port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+[2026-06-07T13:10:01Z] another runner holds the lock, exiting
