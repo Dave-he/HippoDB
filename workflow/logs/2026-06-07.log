@@ -191,3 +191,6 @@ test result: FAILED. 58 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out;
 [2026-06-07T13:24:31Z] === runner end — T-0003 -> queued (attempts=1) ===
 [2026-06-07T13:25:00Z] === runner start ===
 [2026-06-07T13:25:00Z] dispatching T-0003: port sqlite3_strglob and sqlite3_strlike (pattern matching)
+[2026-06-07T13:29:08Z]   T-0003 done: turns=22 cost=$0.833 write/edit=6 bash=9 read=6 text_len=2041 subtype=success
+[2026-06-07T13:29:08Z]   cargo check OK
+[2026-06-07T13:29:09Z]   cargo test OK
