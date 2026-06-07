@@ -72,3 +72,22 @@ FileNotFoundError: [Errno 2] No such file or directory: 'claude'
 [2026-06-07T14:20:00Z] another runner holds the lock, exiting
 [2026-06-07T14:25:00Z] === runner start ===
 [2026-06-07T14:25:00Z] dispatching T-0005: port sqlite3_hash and GrowableArray
+[2026-06-07T14:29:46Z]   T-0005 done: turns=0 cost=$0.000 write/edit=0 bash=12 read=4 text_len=0 subtype=
+[2026-06-07T14:29:46Z]   T-0005 STALLED: 4 reads but 0 writes of any kind
+[2026-06-07T14:30:00Z] another runner holds the lock, exiting
+[2026-06-07T14:32:46Z]   cargo check TIMEOUT
+[2026-06-07T14:32:46Z] === runner end — T-0005 -> stalled (attempts=1) ===
+[2026-06-07T14:32:46Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-07T14:32:46Z]     trigger pid=37715
+[2026-06-07T14:35:00Z] another runner holds the lock, exiting
+[2026-06-07T14:40:00Z] another runner holds the lock, exiting
+[2026-06-07T14:45:00Z] === runner start ===
+[2026-06-07T14:45:00Z] dispatching T-0006: port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
+[2026-06-07T14:50:00Z] another runner holds the lock, exiting
+[2026-06-07T14:55:00Z] another runner holds the lock, exiting
+[2026-06-07T15:00:01Z] another runner holds the lock, exiting
+[2026-06-07T15:05:00Z] another runner holds the lock, exiting
+[2026-06-07T15:10:00Z] another runner holds the lock, exiting
+[2026-06-07T15:15:00Z] another runner holds the lock, exiting
+[2026-06-07T15:20:00Z] another runner holds the lock, exiting
+[2026-06-07T15:25:00Z] another runner holds the lock, exiting

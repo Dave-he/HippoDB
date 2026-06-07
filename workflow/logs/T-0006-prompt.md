@@ -25,6 +25,16 @@
 - **要写测试**:`tests/util/str.rs: 8 用例, 包括 ASCII / 混合大小写 / 长度不等 / 含 UTF-8 字节(只比较前 N)。`
 - **估计轮数**:`15`
 
+## 上次尝试的反馈 (attempt #1)
+
+你的上一次实现有以下问题:
+
+```
+killed by Hermes due to claude hang; manual hash.rs type fix applied
+```
+
+**请读 `workflow/logs/T-0006-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
+
 
 ## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
 

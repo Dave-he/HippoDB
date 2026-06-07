@@ -1,17 +1,20 @@
 # Backlog State
 
-- **Total tasks**: 15
-- **Done**: 3 (20.0%)
-- **Queued**: 11
+- **Total tasks**: 18
+- **Done**: 3 (16.7%)
+- **Queued**: 14
 - **In progress**: 0
 - **Blocked**: 0
 - **Failed**: 0
-- **Last update**: 2026-06-07T13:29:09.261513+00:00
+- **Last update**: 2026-06-07T14:32:46.311089+00:00
 
-## queued (11)
-- `T-0005` [L0/util] port sqlite3_hash and GrowableArray
-- `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
-- `T-0007` [L0/util] port sqlite3_mprintf / sqlite3_vsnprintf (printf-style format)
+## queued (14)
+- `T-0005` [L0/util] port sqlite3_hash and GrowableArray — last error: claude read 4 files but wrote 0; prompt may be too cautious
+- `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp) — last error: killed by Hermes due to claude hang; manual hash.rs type fix applied
+- `T-0007a` [L0/util] port integer printf (d/i/u/x/o/p/%%)
+- `T-0007b` [L0/util] port string printf (s/.*)
+- `T-0007c` [L0/util] port float printf (f/e/g)
+- `T-0007d` [L0/util] port SQLite-specific printf (q/Q/w/z)
 - `T-0008` [L0/util] port sqlite3_randomness (PRNG)
 - `T-0009` [L0/util] port date/time functions (julianday, strftime, current_time)
 - `T-0010` [L1/os] port OS VFS interface and unix VFS (slim subset: open/close/read/write)

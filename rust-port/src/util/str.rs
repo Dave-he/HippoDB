@@ -71,6 +71,22 @@ fn to_lower(b: u8) -> u8 {
 /// The return value is the byte-wise difference of the first differing
 /// position after ASCII case-folding, or `0` if the two strings are
 /// equal up to the first NUL / slice end.
+///
+/// Translation of the C reference (util.c:423-441):
+/// ```c
+/// for(;;){
+///     c = *a;  x = *b;
+///     if( c==x ){
+///         if( c==0 ) break;        // both NUL → equal
+///     }else{
+///         c = (int)UpperToLower[c] - (int)UpperToLower[x];
+///         if( c ) break;            // folded diff non-zero → return diff
+///         // else: case pair ('A' vs 'a') → fall through, advance
+///     }
+///     a++;  b++;
+/// }
+/// return c;
+/// ```
 pub fn str_icmp(a: &[u8], b: &[u8]) -> i32 {
     let mut i: usize = 0;
     loop {
@@ -83,19 +99,19 @@ pub fn str_icmp(a: &[u8], b: &[u8]) -> i32 {
                 // Both strings ended together — equal.
                 return 0;
             }
+            // Raw bytes match (and are non-NUL) — advance.
         } else {
             let diff = (to_lower(ca) as i32) - (to_lower(cb) as i32);
             if diff != 0 {
+                // Folded bytes differ — return the post-fold difference.
+                // NOTE: this is `c` from the C code (overloaded), which
+                // is now the folded diff, not the raw byte.
                 return diff;
             }
-            // Cased pair (e.g. 'A' vs 'a') folded to the same byte; the
-            // raw bytes differed so we MUST stop here — the original
-            // C does not loop further on this branch (the `if( c ) break`
-            // inside the else exits the for-loop). Translating 1:1:
-            // we return the folded difference, which is 0 only for
-            // case-pairs; returning 0 is the correct result because the
-            // two positions compare equal after fold.
-            return diff;
+            // Case pair (e.g. 'A' vs 'a') folded to the same byte; the C
+            // code does NOT break here (the `if( c ) break` is false when
+            // c == 0). It falls through to `a++; b++;` and continues.
+            // Translating 1:1: just advance, do not return.
         }
         i += 1;
     }

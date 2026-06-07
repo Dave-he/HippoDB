@@ -134,39 +134,92 @@ def run_claude(task: dict) -> dict:
     prompt_file.write_text(prompt)
 
     log(f"dispatching {task['id']}: {task['title']}")
+    # 加速: max_turns 之外再加 wall-clock hard cap, 防 Claude API hang
+    # (MiniMax-M3 在 -p 模式下偶尔 25min 完全不输出)
+    max_turns = min(task.get("est_turns", 12), 12)  # 强制 ≤12, 避免长跑挂起
+    hard_timeout_s = 480  # 8 分钟 wall-clock 上限
+    stall_timeout_s = 240  # 4 分钟无 stdout 输出视为 stall
     cmd = [
         "claude",
         "-p",
         prompt,
-        "--output-format",
-        "stream-json",
+        "--output-format", "stream-json",
         "--verbose",
-        "--max-turns",
-        str(task.get("est_turns", 12)),
-        "--max-budget-usd",
-        "5",
-        "--add-dir",
-        str(ROOT),
-        # 关键: 显式允许 Write/Edit/MultiEdit。
-        # --bare 模式会禁用这些工具(参考 claude-code skill),
-        # 所以我们用 --allowedTools 而不是 --bare。
-        "--allowedTools",
-        "Read,Write,Edit,MultiEdit,Bash,Grep,Glob,NotebookEdit,WebFetch",
-        # 拒绝破坏性操作
-        "--disallowedTools",
-        "WebSearch",
+        "--max-turns", str(max_turns),
+        "--max-budget-usd", "5",
+        "--add-dir", str(ROOT),
+        "--allowedTools", "Read,Write,Edit,MultiEdit,Bash,Grep,Glob",
+        "--permission-mode", "bypassPermissions",
+        "--disallowedTools", "WebSearch",
     ]
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=WORKDIR,
-            capture_output=True,
-            text=True,
-            timeout=1500,  # 25 分钟硬上限
+
+    # 用 Popen + 监控, 不用 subprocess.run (它阻塞到结束, 没法中途 kill hang)
+    import threading
+    import time as _time
+    proc = subprocess.Popen(
+        cmd, cwd=WORKDIR,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
+    )
+    start = _time.time()
+    last_io = start
+    stdout_holder = []
+    stderr_holder = []
+
+    def read_stdout():
+        for line in proc.stdout:
+            stdout_holder.append(line)
+    def read_stderr():
+        for line in proc.stderr:
+            stderr_holder.append(line)
+
+    t_out = threading.Thread(target=read_stdout, daemon=True)
+    t_err = threading.Thread(target=read_stderr, daemon=True)
+    t_out.start()
+    t_err.start()
+
+    stall_reason = None
+    while True:
+        if proc.poll() is not None:
+            break
+        now = _time.time()
+        elapsed = now - start
+        cur_size = sum(len(s) for s in stdout_holder)
+        if cur_size > getattr(read_stdout, "_last_size", 0):
+            read_stdout._last_size = cur_size
+            last_io = now
+        if elapsed > hard_timeout_s:
+            stall_reason = f"hard_timeout_{int(elapsed)}s"
+            log(f"  {task['id']} HARD TIMEOUT after {int(elapsed)}s, killing claude")
+            proc.kill()
+            break
+        stall_for = now - last_io
+        if stall_for > stall_timeout_s and elapsed > 60:
+            stall_reason = f"stall_no_output_{int(stall_for)}s"
+            log(f"  {task['id']} STALL: no stdout for {int(stall_for)}s, killing claude")
+            proc.kill()
+            break
+        _time.sleep(2)
+
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
+    exit_code = proc.wait(timeout=10)
+    stdout_text = "".join(stdout_holder)
+    stderr_text = "".join(stderr_holder)
+
+    class _Result:
+        pass
+    result = _Result()
+    result.stdout = stdout_text
+    result.stderr = stderr_text
+    result.returncode = exit_code
+
+    if stall_reason:
+        log(f"  {task['id']} killed: {stall_reason}")
+        result.stdout = result.stdout + (
+            f'\n{{"type":"result","subtype":"error_killed","is_error":true,'
+            f'"total_cost_usd":0,"num_turns":0,"duration_ms":0,'
+            f'"kill_reason":"{stall_reason}"}}\n'
         )
-    except subprocess.TimeoutExpired:
-        log(f"  {task['id']} TIMEOUT after 25min")
-        return {"id": task["id"], "status": "failed", "next_action": "timeout"}
 
     # 完整 stdout 存到文件
     stream_log = LOG_DIR / f"{task['id']}-stream.jsonl"
