@@ -5,7 +5,7 @@
 
 set -e
 
-CRON_LINE="* * * * * /Users/hyx/workspace/sqllite-project/workflow/run-once.sh >> /Users/hyx/workspace/sqllite-project/workflow/cron.log 2>&1"
+CRON_LINE="*/5 * * * * /Users/hyx/workspace/sqllite-project/workflow/run-once.sh >> /Users/hyx/workspace/sqllite-project/workflow/cron.log 2>&1"
 
 # 先看有没有
 if crontab -l 2>/dev/null | grep -F "sqllite-project/workflow/run-once.sh" > /dev/null; then
