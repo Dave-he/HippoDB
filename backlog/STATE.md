@@ -1,18 +1,14 @@
 # Backlog State
 
 - **Total tasks**: 15
-- **Done**: 1 (6.7%)
-- **Queued**: 13
+- **Done**: 2 (13.3%)
+- **Queued**: 12
 - **In progress**: 0
 - **Blocked**: 0
-- **Failed**: 1
-- **Last update**: 2026-06-07T12:25:00.624409+00:00
+- **Failed**: 0
+- **Last update**: 2026-06-07T12:42:10.332134+00:00
 
-## failed (1)
-- `T-0002` [L0/util] port sqlite3_malloc family and SqliteError OOM deferred check — last error: no result; raw len=978
-
-## queued (13)
-- `T-0003` [L0/util] port sqlite3_strglob and sqlite3_strlike (pattern matching)
+## queued (12)
 - `T-0004` [L0/util] port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
 - `T-0005` [L0/util] port sqlite3_hash and GrowableArray
 - `T-0006` [L0/util] port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
@@ -26,5 +22,6 @@
 - `T-0014` [L2/tokenize] port tokenizer (SQL lexer)
 - `T-0015` [L2/parse] port Lemon parser generator and parse.y to Rust
 
-## done (1)
+## done (2)
 - `T-0001` [P0/workspace] initialize Rust workspace and minimal FFI shim
+- `T-0002` [L0/util] port sqlite3_malloc family and SqliteError OOM deferred check

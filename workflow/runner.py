@@ -133,9 +133,16 @@ def run_claude(task: dict) -> dict:
         str(task.get("est_turns", 12)),
         "--max-budget-usd",
         "5",
-        "--bare",
         "--add-dir",
         str(ROOT),
+        # 关键: 显式允许 Write/Edit/MultiEdit。
+        # --bare 模式会禁用这些工具(参考 claude-code skill),
+        # 所以我们用 --allowedTools 而不是 --bare。
+        "--allowedTools",
+        "Read,Write,Edit,MultiEdit,Bash,Grep,Glob,NotebookEdit,WebFetch",
+        # 拒绝破坏性操作
+        "--disallowedTools",
+        "WebSearch",
     ]
     try:
         result = subprocess.run(
@@ -259,38 +266,70 @@ def run_claude(task: dict) -> dict:
         return parsed
 
     # fallback: 即使没 contract JSON, 也能根据 tool_use 判断
-    # - 写了文件 + 跑了 build/test → 算"implicit done"
-    # - 只 read 没 write → "did nothing"
+    # - 写了 rust-port/* 文件 + 跑了 build/test → 算"implicit done"
+    # - 只 read 没 write → "stalled"
+    # - 只写 notes/*.md → "discovery" (claude 发现 spec 问题, 需要人 review)
     # - max_turns 但有 write → "partial"
-    if write_count > 0 and bash_count > 0:
+
+    # 分类 write/edit
+    code_writes = [
+        tc for tc in tool_calls
+        if tc["name"] in ("Write", "Edit", "MultiEdit")
+        and "file_path" in tc["input"]
+        and tc["input"]["file_path"].startswith(str(WORKDIR))
+    ]
+    note_writes = [
+        tc for tc in tool_calls
+        if tc["name"] in ("Write", "Edit", "MultiEdit")
+        and "file_path" in tc["input"]
+        and tc["input"]["file_path"].endswith(".md")
+        and "/notes/" in tc["input"]["file_path"]
+    ]
+    code_write_count = len(code_writes)
+    note_write_count = len(note_writes)
+
+    # 关键判定: 写了 rust 代码 + 跑了 bash → done
+    if code_write_count > 0 and bash_count > 0:
         log(
             f"  {task['id']} IMPLICIT DONE based on tool_use "
-            f"({write_count} writes, {bash_count} bash)"
+            f"({code_write_count} code writes, {bash_count} bash)"
         )
         return {
             "id": task["id"],
-            "status": "done",  # 信任: claude 写了 + 跑了命令
+            "status": "done",
             "files_created": [
                 tc["input"].get("file_path", "?")
-                for tc in tool_calls
-                if tc["name"] == "Write" and "file_path" in tc["input"]
+                for tc in code_writes
+                if tc["name"] == "Write"
             ],
             "files_modified": [
                 tc["input"].get("file_path", "?")
-                for tc in tool_calls
+                for tc in code_writes
                 if tc["name"] in ("Edit", "MultiEdit")
-                and "file_path" in tc["input"]
             ],
             "tests_run": "(see stream log)",
-            "diff_summary": f"implicit: {write_count} writes, {bash_count} bash, {read_count} reads",
+            "diff_summary": f"implicit: {code_write_count} code writes, {bash_count} bash, {read_count} reads",
             "next_action": "verified via tool_use inspection",
             "tool_calls": tool_calls,
             "num_turns": num_turns,
             "cost_usd": cost,
         }
 
-    if write_count == 0 and read_count > 0:
-        log(f"  {task['id']} DID NOTHING: {read_count} reads but 0 writes")
+    # 写了 note 但没写代码 → claude 发现 spec 问题, 需人 review
+    if note_write_count > 0 and code_write_count == 0:
+        log(f"  {task['id']} DISCOVERY: {note_write_count} notes written, no code change")
+        return {
+            "id": task["id"],
+            "status": "discovery",
+            "next_action": f"claude wrote {note_write_count} note(s) but no code; see {note_writes[0]['input'].get('file_path')}",
+            "tool_calls": tool_calls,
+            "num_turns": num_turns,
+            "cost_usd": cost,
+        }
+
+    # 啥都没写
+    if code_write_count == 0 and note_write_count == 0 and read_count > 0:
+        log(f"  {task['id']} STALLED: {read_count} reads but 0 writes of any kind")
         return {
             "id": task["id"],
             "status": "stalled",
@@ -300,12 +339,12 @@ def run_claude(task: dict) -> dict:
             "cost_usd": cost,
         }
 
-    # 写了一些但没跑命令 → 可能编译/测试都没过
-    if write_count > 0 and bash_count == 0:
+    # 写了一些代码但没跑 bash → 可能编译都没过
+    if code_write_count > 0 and bash_count == 0:
         return {
             "id": task["id"],
             "status": "partial",
-            "next_action": f"wrote {write_count} files but didn't run cargo build/test",
+            "next_action": f"wrote {code_write_count} code files but didn't run cargo build/test",
             "tool_calls": tool_calls,
             "num_turns": num_turns,
             "cost_usd": cost,
@@ -314,7 +353,7 @@ def run_claude(task: dict) -> dict:
     return {
         "id": task["id"],
         "status": "failed",
-        "next_action": f"no tool_use; turns={num_turns}",
+        "next_action": f"no qualifying tool_use; turns={num_turns}",
         "tool_calls": tool_calls,
         "num_turns": num_turns,
         "cost_usd": cost,
@@ -335,13 +374,15 @@ def update_task(items: list, task: dict, result: dict) -> None:
                 t["status"] = "blocked"
                 t["last_error"] = result.get("next_action", "")
             elif new_status == "stalled":
-                # claude 读了 N 个文件但没写 1 行 → prompt 失败,不该无限 retry
                 t["status"] = "stalled"
                 t["last_error"] = result.get("next_action", "stalled")
             elif new_status == "partial":
-                # 写了但没跑 build → 也 stall, 让人看 stream log
                 t["status"] = "stalled"
                 t["last_error"] = result.get("next_action", "partial")
+            elif new_status == "discovery":
+                # claude 写了 notes/* 没写代码 → spec 可能有错或 agent 困惑,等人 review
+                t["status"] = "discovery"
+                t["last_error"] = result.get("next_action", "discovery")
             elif new_status == "incomplete":
                 t["status"] = "queued" if t["attempts"] < 5 else "failed"
                 t["last_error"] = result.get("next_action", "incomplete")

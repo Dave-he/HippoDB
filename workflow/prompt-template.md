@@ -13,7 +13,8 @@
 2. `plans/02-c-porting-conventions.md` — C 到 Rust 的命名/错误/内存/FFI 约定
 3. `{{C_FILE}}` — 官方参考实现(只读)
 4. `rust-port/src/lib.rs` 和 `rust-port/src/error.rs` — 已有公共 API 与错误类型
-5. `notes/` 下和本任务相关的现有笔记
+5. `notes/{{ID}}.md` — 本任务已有的笔记(可能含之前的发现/spec 修正)
+6. `rust-port/src/` — 现有所有 Rust 代码(已 done 的任务产物)
 
 ## 本子任务
 
@@ -23,6 +24,16 @@
 - **C 入口函数**(从 `c_file` 提取):`{{C_API_SIG}}`
 - **要写测试**:`{{TESTS}}`
 - **估计轮数**:`{{EST_TURNS}}`
+
+## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
+
+1. **第一轮就写代码,不要通读**。你最多花 2 轮(Read + Glob)理解上下文,然后**立刻 Write**。
+   如果你读 10+ 文件还不写任何东西, 任务会被判 stalled。
+2. **如果任务 spec 与 C 源码不一致,优先 C 源码**(`{{C_FILE}}` 是真相源)。
+   在 `notes/{{ID}}-discovery.md` 写 5 行说明, 然后**继续按 C 源码实现,不要停下来**。
+3. **如果现有桩代码错了(比如 T-0001 的 malloc(0) 假非 null 指针),直接替换它**,
+   不要保留旧行为。
+4. **写完代码后必须跑 `cargo check` 和 `cargo test`**, 在返回的 JSON 里报告结果。
 
 ## 硬性要求
 

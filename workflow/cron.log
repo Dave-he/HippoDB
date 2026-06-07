@@ -23,3 +23,20 @@ FileNotFoundError: [Errno 2] No such file or directory: 'claude'
 [2026-06-07T12:25:00Z] === runner start ===
 [2026-06-07T12:25:00Z] no task with satisfied deps; will wait for blocker resolution
 [2026-06-07T12:30:00Z] another runner holds the lock, exiting
+[2026-06-07T12:35:00Z] === runner start ===
+[2026-06-07T12:35:00Z] dispatching T-0003: port sqlite3_strglob and sqlite3_strlike (pattern matching)
+[2026-06-07T12:36:01Z]   T-0003 done: turns=21 cost=$0.405 write/edit=0 bash=13 read=16 text_len=322 subtype=error_max_turns
+[2026-06-07T12:36:01Z]   T-0003 DID NOTHING: 16 reads but 0 writes
+[2026-06-07T12:36:01Z]   cargo check OK
+[2026-06-07T12:36:01Z] === runner end — T-0003 -> stalled (attempts=0) ===
+[2026-06-07T12:40:00Z] === runner start ===
+[2026-06-07T12:40:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
+[2026-06-07T12:42:10Z]   T-0002 done: turns=26 cost=$0.625 write/edit=2 bash=24 read=13 text_len=57 subtype=error_max_turns
+[2026-06-07T12:42:10Z]   T-0002 IMPLICIT DONE based on tool_use (2 code writes, 24 bash)
+[master 2a4cbdd] port: T-0002 port sqlite3_malloc family and SqliteError OOM deferred check
+ 5 files changed, 193 insertions(+), 470 deletions(-)
+[2026-06-07T12:42:10Z]   committed T-0002
+[2026-06-07T12:42:10Z]   cargo check OK
+[2026-06-07T12:42:10Z] === runner end — T-0002 -> done (attempts=0) ===
+[2026-06-07T12:45:00Z] === runner start ===
+[2026-06-07T12:45:00Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
