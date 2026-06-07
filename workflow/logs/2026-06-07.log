@@ -57,3 +57,5 @@
 [2026-06-07T12:45:51Z]   found stale in_progress: T-0002, resetting to queued
 [2026-06-07T12:45:51Z] dispatching T-0002: port sqlite3_malloc family and SqliteError OOM deferred check
 [2026-06-07T12:50:01Z] another runner holds the lock, exiting
+[2026-06-07T12:54:26Z]   T-0002 done: turns=26 cost=$1.724 write/edit=29 bash=14 read=16 text_len=171 subtype=error_max_turns
+[2026-06-07T12:54:26Z]   T-0002 IMPLICIT DONE based on tool_use (29 code writes, 14 bash)

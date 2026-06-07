@@ -47,6 +47,10 @@ impl Malloc {
     ///
     /// C 行为(`malloc.c:296-309`):`n==0 || n>SQLITE_MAX_ALLOCATION_SIZE` → NULL;
     /// OOM → NULL,设置 `db.malloc_failed`。
+    // 我们遵循内部 API 全部 safe 的约定(参 `02-c-porting-conventions.md` §2):
+    // 返回的 `*mut u8` 仍是裸指针,但调用方在 `unsafe` 上下文中使用。
+    // 抑制 `not_unsafe_ptr_arg_deref` lint。
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn malloc(n: u64, db: Option<&SqliteDb>) -> *mut u8 {
         if n == 0 || n > SQLITE_MAX_ALLOCATION_SIZE {
             return std::ptr::null_mut();
@@ -67,12 +71,14 @@ impl Malloc {
     }
 
     /// `sqlite3Malloc64(n)` — 同 `malloc`,显式 i64/u64 签名。
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn malloc64(n: u64, db: Option<&SqliteDb>) -> *mut u8 {
         Self::malloc(n, db)
     }
 
     /// `sqlite3MallocZero(n)` — alloc + memset 0。
     #[allow(dead_code)] // 后续子任务(sqlite3DbMallocZero)会接入
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn malloc_zero(n: u64, db: Option<&SqliteDb>) -> *mut u8 {
         let p = Self::malloc(n, db);
         if !p.is_null() {
@@ -90,6 +96,7 @@ impl Malloc {
     /// - `n>MAX` → 返回 NULL,**p 保留**
     /// - OOM → 返回 NULL,**p 保留**(C 永不释放失败时的原指针)
     #[allow(dead_code)] // 公开 API 转换在后续子任务(sqlite3_realloc)接入
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn realloc(p: *mut u8, n: u64, db: Option<&SqliteDb>) -> *mut u8 {
         if p.is_null() {
             return Self::malloc(n, db);
@@ -126,6 +133,7 @@ impl Malloc {
     }
 
     /// `sqlite3_free(p)` — 释放指针。NULL 是 no-op。
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn free(p: *mut u8) {
         if p.is_null() {
             return;
