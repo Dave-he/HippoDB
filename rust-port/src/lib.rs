@@ -22,6 +22,7 @@ pub use util::alloc::{Malloc, SQLITE_MAX_ALLOCATION_SIZE};
 pub use util::pattern::{
  sqlite3_strglob, sqlite3_strlike, SQLITE_MATCH, SQLITE_NOMATCH, SQLITE_NOWILDCARDMATCH,
 };
+pub use util::utf8::{utf8_char_count, utf8_read, utf8_write};
 
 pub const SQLITE_VERSION: &str = env!("SQLITE_VERSION");
 pub const SQLITE_VERSION_NUMBER: i32 = 3_054_000; // 3.54.0 → 3054000
