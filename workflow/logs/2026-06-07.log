@@ -242,3 +242,15 @@ test result: FAILED. 58 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out;
 [2026-06-07T15:20:00Z] another runner holds the lock, exiting
 [2026-06-07T15:22:50Z] another runner holds the lock, exiting
 [2026-06-07T15:25:00Z] another runner holds the lock, exiting
+[2026-06-07T15:25:49Z] === runner start ===
+[2026-06-07T15:25:49Z] dispatching T-0006: port string compare family (strnicmp, sqlite3_stricmp, sqlite3_strnicmp)
+[2026-06-07T15:27:12Z]   T-0006 done: turns=13 cost=$0.492 write/edit=0 bash=14 read=10 text_len=0 subtype=error_max_turns
+[2026-06-07T15:27:12Z]   T-0006 STALLED: 10 reads but 0 writes of any kind
+[2026-06-07T15:27:12Z]   cargo check OK
+[2026-06-07T15:30:00Z] another runner holds the lock, exiting
+[2026-06-07T15:32:12Z]   cargo test TIMEOUT
+[2026-06-07T15:32:12Z] === runner end — T-0006 -> stalled (attempts=1) ===
+[2026-06-07T15:32:12Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-07T15:32:12Z]     trigger pid=61017
+[2026-06-07T15:32:39Z]   T-0005 TIMEOUT after 25min
+[2026-06-07T15:32:39Z]   cargo check OK

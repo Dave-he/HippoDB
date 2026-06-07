@@ -30,7 +30,7 @@
 你的上一次实现有以下问题:
 
 ```
-killed by Hermes due to claude hang; manual hash.rs type fix applied
+killed by Hermes after 22min no-result; Claude API appears to hang on str.rs (a small task)
 ```
 
 **请读 `workflow/logs/T-0006-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
