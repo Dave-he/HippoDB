@@ -14,6 +14,7 @@ rust_library(
             "src/util/printf/*.rs",
             "src/btree/*.rs",
             "src/pager/*.rs",
+            "src/parse/*.rs",
             "src/tokenize/*.rs",
             "src/vfs/*.rs",
         ],
