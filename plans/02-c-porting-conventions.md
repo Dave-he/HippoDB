@@ -112,9 +112,13 @@ Commit message 格式:`port: <id> <short title>`(如 `port: T-0001 malloc family
 
 ## 12. 必查清单(每个子任务 commit 前)
 
-- [ ] `cargo build` 通过
-- [ ] `cargo test` 通过
-- [ ] `cargo clippy --all-targets -- -D warnings` 通过
+> ⚠️ **2026-06-08 修订**: 工具链从 `cargo` 切换到 `bazel + 远端缓存/执行`. 详见 `plans/03-bazel-remote-build.md`.
+> 本机不再跑编译; 所有 `bazel` 命令走 `--config=remote`.
+
+- [ ] `bazel build //...` 通过 (走 remote cache, 本地应秒级 NO-OP)
+- [ ] `bazel test //...:all` 通过
+- [ ] `bazel build //... --aspects=@rules_rust//rust:defs.bzl:clippy_aspect` 无 clippy warning
 - [ ] 没有 `unwrap()` / `expect()` (除了 #![allow] 标注的少数)
 - [ ] 没有引入新依赖(若需要,先在 `notes/<id>-discovery.md` 解释)
 - [ ] 公开 API 没有签名变化
+- [ ] 旧 cargo 路径已删除(避免误调用)
