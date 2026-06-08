@@ -15,6 +15,7 @@ mod error;
 mod handle;
 pub mod btree;
 pub mod pager;
+pub mod parse;
 pub mod tokenize;
 pub mod util;
 pub mod vfs;
