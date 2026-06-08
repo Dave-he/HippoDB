@@ -2,17 +2,22 @@ name: Bazel Remote Build (BuildBuddy)
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
-# cancel in-progress runs for same ref
+# cancel in-progress runs for the same ref
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# all Bazel + BuildBuddy env vars consolidated here
+env:
+  BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
 jobs:
   test:
+    name: build + test (remote cache + RBE)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -23,30 +28,36 @@ jobs:
         with:
           bazelisk-cache: true
 
-      - name: Cache bazel repos
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel-${{ hashFiles('rust-port/.bazelversion', 'rust-port/MODULE.bazel', 'rust-port/.bazelrc', 'rust-port/**/BUILD.bazel') }}
-          restore-keys: |
-            ${{ runner.os }}-bazel-
-
-      - name: Build + test (BuildBuddy remote cache + executor)
+      # BES backend + API key are baked into the .bazelrc at the
+      # config:ci-remote level. We still pass the API key via
+      # --remote_header so the local daemon auths against BuildBuddy
+      # even before any config is read.
+      - name: Build (remote cache only)
+        working-directory: rust-port
         run: |
-          cd rust-port
+          bazel --version
           bazel build //...
-          bazel test //...:all --config=ci-remote
-        env:
-          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
-      - name: Upload BES results
+      - name: Test (remote cache + RBE executor)
+        working-directory: rust-port
+        run: |
+          bazel test //...:all \
+            --config=ci-remote \
+            --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY} \
+            --remote_header=x-buildbuddy-platform=github-actions \
+            --remote_header=x-buildbuddy-label=${GITHUB_RUN_ID}
+
+      - name: Upload Bazel test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: buildbuddy-bes
+          name: bazel-testlogs
           path: |
-            bazel-testlogs/**
-            bazel-bin/test.log
+            rust-port/bazel-testlogs/**
+            rust-port/bazel-bin/**/*.log
           if-no-files-found: ignore
+
+      - name: Summary link
+        if: always()
+        run: |
+          echo "🔗 BuildBuddy invocation: https://app.buildbuddy.io/invocation/?bes_backend=grpcs://cloud.buildbuddy.io&search=${GITHUB_RUN_ID}"

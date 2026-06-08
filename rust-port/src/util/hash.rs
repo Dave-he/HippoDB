@@ -197,6 +197,7 @@ impl Hash {
                         data: e.data,
                         h,
                         found: true,
+                        slot: Some(slot),
                     };
                 }
                 cur = e.next;
@@ -214,6 +215,7 @@ impl Hash {
                         data: e.data,
                         h,
                         found: true,
+                        slot: Some(slot),
                     };
                 }
                 cur = e.next;
@@ -224,6 +226,7 @@ impl Hash {
             data: ptr::null_mut(),
             h,
             found: false,
+            slot: None,
         }
     }
 
@@ -241,12 +244,19 @@ impl Hash {
         if found.found {
             let old = found.data;
             if data.is_null() {
-                self.remove_with_hash(found.h);
+                // Remove the specific slot we just verified. Walking
+                // by hash alone would risk deleting a different
+                // element when hashes collide — which happens in the
+                // 100k-insert test, so we use the slot returned by
+                // `find_with_hash` (mirrors C `removeElement(pH, elem)`
+                // where `elem` is the exact pointer).
+                if let Some(slot) = found.slot {
+                    self.remove_slot(slot);
+                }
             } else {
                 // Replace data + key reference. The C version stores
                 // pKey verbatim; we own a String copy.
-                let slot = self.find_slot(p_key, found.h)
-                    .expect("just verified found");
+                let slot = found.slot.expect("found implies slot");
                 let e = &mut self.elems[slot];
                 e.data = data;
                 e.p_key.clear();
@@ -334,38 +344,6 @@ impl Hash {
     // Internal helpers
     // ------------------------------------------------------------------
 
-    /// Find the slot index of an element matching `p_key` and `h`.
-    /// Pre-condition: the element is known to be present.
-    fn find_slot(&self, p_key: &str, h: u32) -> Option<usize> {
-        if self.htsize > 0 {
-            let idx = (h % self.htsize) as usize;
-            let entry = &self.ht[idx];
-            let mut count = entry.count;
-            let mut cur = entry.chain;
-            while count > 0 {
-                let slot = cur?;
-                let e = &self.elems[slot];
-                if e.h == h && str_icmp(&e.p_key, p_key) == 0 {
-                    return Some(slot);
-                }
-                cur = e.next;
-                count -= 1;
-            }
-        }
-        let mut count = self.count;
-        let mut cur = self.first;
-        while count > 0 {
-            let slot = cur?;
-            let e = &self.elems[slot];
-            if e.h == h && str_icmp(&e.p_key, p_key) == 0 {
-                return Some(slot);
-            }
-            cur = e.next;
-            count -= 1;
-        }
-        None
-    }
-
     /// `insertElement` (hash.c:79-104).
     fn insert_element(&mut self, bucket: Option<usize>, slot: usize) {
         // First, splice into the all-elements doubly-linked list.
@@ -401,45 +379,10 @@ impl Hash {
     }
 
     /// `removeElement` (hash.c:188-216).
-    fn remove_with_hash(&mut self, h: u32) {
-        // Locate the slot. We need the key for str_icmp, so we use
-        // find_slot equivalent logic.
-        let slot = self.find_slot_by_hash(h);
-        if let Some(slot) = slot {
-            self.remove_slot(slot);
-        }
-    }
-
-    fn find_slot_by_hash(&self, h: u32) -> Option<usize> {
-        if self.htsize > 0 {
-            let idx = (h % self.htsize) as usize;
-            let entry = &self.ht[idx];
-            let mut count = entry.count;
-            let mut cur = entry.chain;
-            while count > 0 {
-                let slot = cur?;
-                let e = &self.elems[slot];
-                if e.h == h {
-                    return Some(slot);
-                }
-                cur = e.next;
-                count -= 1;
-            }
-        }
-        let mut count = self.count;
-        let mut cur = self.first;
-        while count > 0 {
-            let slot = cur?;
-            let e = &self.elems[slot];
-            if e.h == h {
-                return Some(slot);
-            }
-            cur = e.next;
-            count -= 1;
-        }
-        None
-    }
-
+    ///
+    /// Removes the element at `slot` from the table. The caller is
+    /// responsible for providing a valid `slot` — typically obtained
+    /// from `find_with_hash(...).slot`.
     fn remove_slot(&mut self, slot: usize) {
         // Unlink from all-elements list.
         let (next, prev) = {
@@ -598,6 +541,13 @@ pub struct FindResult {
     pub h: u32,
     /// `true` if a matching element was found.
     pub found: bool,
+    /// Slot id of the matching element, when `found` is `true`.
+    ///
+    /// Stored so the caller can directly remove the slot without a
+    /// second walk — the C version passes the actual `HashElem*`
+    /// pointer into `removeElement`, so we mirror that with a slot
+    /// index. When `found` is `false`, this is `None`.
+    pub slot: Option<usize>,
 }
 
 /// Iterator over a `Hash` in insertion order.

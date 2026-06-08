@@ -1,19 +1,35 @@
-# 不可提交
-sqlite-source/         # 官方源码只读,只本地参考
-oracle/                # 预编译产物,体积大
-workflow/logs/         # 调度日志
+# ─── 不可提交 (官方源码 / 调度器 / 内部状态) ─────────────────────
+# SQLite 官方源码,只读,本地参考用
+sqlite-source/
+# 官方预编译产物 + 测试集,体积大
+oracle/
+# Hermes 调度器日志 (每次 claude 派单的全量 stdout)
+workflow/logs/
+# 调度器进程锁
 workflow/.lock
+# 调度器状态机 (T-状态、queue、prompt) 不进 public
+backlog/
+# 调度器临时文件
 backlog/.tmp
 
-# Rust
+# ─── Rust 构建产物 ───────────────────────────────────────
 rust-port/target/
 rust-port/Cargo.lock
 
-# Bazel (本机 0 编译, 但 bazelisk 会在 rust-port/ 落 symlink + cache)
+# ─── Bazel 本机残留 ──────────────────────────────────────
+# bazelisk 会在 rust-port/ 落 symlink + cache
 rust-port/bazel-*
 rust-port/bazelisk-*
 rust-port/MODULE.bazel.lock
 
-# 用户级 credentials (保险起见)
+# ─── 用户级 credentials ──────────────────────────────────
+# API key 隔离 (BuildBuddy / 任何远端服务)
 **/bazelrc.local
 **/.bazelrc.local
+
+# ─── macOS / IDE 噪音 ────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
