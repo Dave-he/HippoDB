@@ -133,9 +133,16 @@ fn parse_with_fractional_seconds() {
     let dt = parse_iso8601("2024-06-15 12:30:45.5").unwrap();
     let jd = dt.jd();
     let frac = jd - jd.floor();
-    // 0.5 sec = 0.5/86400 of a day.
-    let sec_of_day = frac * 86400.0;
-    assert!((sec_of_day - (12.0 * 3600.0 + 30.0 * 60.0 + 45.5)).abs() < 0.01);
+    // The standard Julian Day starts at noon, so the fractional part
+    // represents "time since noon" / 24h. For 12:30:45.5 the time
+    // since noon is 30m 45.5s = 1845.5 sec. The JD fractional is
+    // 1845.5 / 86400 ≈ 0.021360.
+    let sec_since_noon = frac * 86400.0;
+    let expected = 30.0 * 60.0 + 45.5;
+    assert!(
+        (sec_since_noon - expected).abs() < 0.01,
+        "got {sec_since_noon}, expected {expected}"
+    );
 }
 
 #[test]

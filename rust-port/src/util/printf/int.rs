@@ -61,11 +61,37 @@ pub fn render_int(
             // (printf.c:525-530), the Rust port always emits the prefix
             // for %p — matching the standard C library (glibc, MSVC)
             // and the SQL function `printf('%p', ...)` expectations.
-            // The fmtinfo entry (printf.c:107) has `prefix=1` for 'p',
-            // which is a structural marker; we treat it as always-on.
-            let mut s = *spec;
-            s.alt_form = true; // always emit the "0x" prefix
-            render_radix(value, 16, DIGITS_LOWER, &s, b"0x")
+            // We bypass `render_radix`'s `value != 0` check (which
+            // exists for the `#` alt-form gate) and always emit the
+            // "0x" prefix, even for value=0.
+            let mut buf = [0u8; 32];
+            let mut idx = buf.len();
+            let mut n = value;
+            if n == 0 {
+                idx -= 1;
+                buf[idx] = b'0';
+            } else {
+                while n > 0 {
+                    idx -= 1;
+                    buf[idx] = DIGITS_LOWER[(n % 16) as usize];
+                    n /= 16;
+                }
+            }
+            let digits_str = std::str::from_utf8(&buf[idx..]).unwrap();
+            let precision = if spec.precision_unset() { 1 } else { spec.precision };
+            let digit_str = if precision < 0 {
+                String::new()
+            } else if precision as usize > digits_str.len() {
+                let mut s = String::with_capacity(precision as usize);
+                for _ in 0..(precision as usize - digits_str.len()) {
+                    s.push('0');
+                }
+                s.push_str(digits_str);
+                s
+            } else {
+                digits_str.to_string()
+            };
+            Ok(format!("0x{}", digit_str))
         }
         _ => unreachable!(
             "render_int called with non-integer type byte {type_byte} (caller should filter)"
@@ -439,7 +465,7 @@ mod tests {
         // would emit "0" (its `if(longvalue==0) flag_alternateform = 0;`
         // clears the flag and gates the prefix on it), but the Rust
         // port treats the prefix as structural, so it's always emitted.
-        assert_eq!(render_int(b'p', 0, &spec()).unwrap(), "0");
+        assert_eq!(render_int(b'p', 0, &spec()).unwrap(), "0x0");
     }
 
     #[test]

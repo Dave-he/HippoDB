@@ -127,7 +127,9 @@ fn hash_find_is_case_insensitive_ascii() {
 fn hash_clear_drops_all() {
     let mut h = Hash::new();
     for i in 0..50u32 {
-        h.insert(&format!("k{i}"), i as *mut u8);
+        // i+1 to avoid null data pointers (insert(_, null) is a no-op
+        // for missing keys, matching sqlite3HashInsert hash.c:262).
+        h.insert(&format!("k{i}"), (i + 1) as *mut u8);
     }
     assert_eq!(h.len(), 50);
     h.clear();
@@ -148,14 +150,15 @@ fn hash_rehash_100k_inserts() {
     let mut h = Hash::new();
     for i in 0..100_000u32 {
         let s = format!("key_{i}");
-        let prev = h.insert(&s, (i as usize) as *mut u8);
+        // i+1 to avoid null data pointers.
+        let prev = h.insert(&s, ((i + 1) as usize) as *mut u8);
         assert!(prev.is_null(), "duplicate insert at i={i}");
     }
     assert_eq!(h.len(), 100_000);
     assert!(h.htsize() > 0, "htsize must grow");
     for i in 0..100_000u32 {
         let s = format!("key_{i}");
-        assert_eq!(h.find(&s), (i as usize) as *mut u8, "key_{i} not found");
+        assert_eq!(h.find(&s), ((i + 1) as usize) as *mut u8, "key_{i} not found");
     }
 }
 
@@ -189,7 +192,8 @@ fn hash_delete_half_of_100k() {
 fn hash_mixed_100k_operations() {
     let mut h = Hash::new();
     for i in 0..50_000u32 {
-        h.insert(&format!("x{i}"), i as *mut u8);
+        // i+1 to avoid null data pointers.
+        h.insert(&format!("x{i}"), (i + 1) as *mut u8);
     }
     // Delete every 3rd
     for i in (0..50_000u32).step_by(3) {
@@ -197,14 +201,14 @@ fn hash_mixed_100k_operations() {
     }
     // Reinsert new keys
     for i in 50_000..100_000u32 {
-        h.insert(&format!("x{i}"), i as *mut u8);
+        h.insert(&format!("x{i}"), (i + 1) as *mut u8);
     }
-    // Spot-check
-    assert!(h.find("x1").is_null(), "x1 was step(3)-deleted? no, x1 should remain");
-    assert_eq!(h.find("x0").is_null(), true, "x0 was step(3)-deleted");
-    assert_eq!(h.find("x3").is_null(), true, "x3 was step(3)-deleted");
-    assert_eq!(h.find("x50000"), 50000u32 as *mut u8);
-    assert_eq!(h.find("x99999"), 99999u32 as *mut u8);
+    // Spot-check (data pointers are i+1 for the survivors)
+    assert!(h.find("x1") == 2u32 as *mut u8, "x1 should be present, data=2");
+    assert!(h.find("x0").is_null(), "x0 was step(3)-deleted");
+    assert!(h.find("x3").is_null(), "x3 was step(3)-deleted");
+    assert_eq!(h.find("x50000"), 50001u32 as *mut u8);
+    assert_eq!(h.find("x99999"), 100000u32 as *mut u8);
     // Total: 50000 - ceil(50000/3) + 50000 = 83334 or similar
     assert!(h.len() > 80_000 && h.len() < 90_000, "unexpected count: {}", h.len());
 }
@@ -232,10 +236,17 @@ fn hash_int_keys_round_trip() {
 // ============================================================================
 #[test]
 fn hash_iter_in_insertion_order() {
+    // The C source's rehash (hash.c:113-146) walks the all-elements
+    // list and re-inserts each element at the head, which reverses
+    // the iteration order. After 5 inserts the rehash triggers
+    // (count >= 5 && count > 2*htsize with htsize=0), so the post-
+    // rehash iter yields in INSERTION order, not reverse.
     let mut h = Hash::new();
     let keys = ["first", "second", "third", "fourth", "fifth"];
     for (i, k) in keys.iter().enumerate() {
-        h.insert(k, i as *mut u8);
+        // i+1 to avoid the null pointer (insert with null data is a
+        // no-op for missing keys).
+        h.insert(k, (i + 1) as *mut u8);
     }
     let collected: Vec<&str> = h.iter().map(|(k, _)| k).collect();
     assert_eq!(collected, keys);

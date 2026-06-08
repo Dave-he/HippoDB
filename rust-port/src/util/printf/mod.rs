@@ -99,21 +99,29 @@ impl FormatSpec {
 /// - `zero_pad`             → pad left with zeros (between sign and digits)
 /// - default                → pad left with spaces
 ///
-/// The zero-pad case is the one where the sign and the body must be
-/// separated (printf.c:504-509; the C code keeps them together because
-/// C has no split semantics, but the visible output is "   -42" vs
-/// "  -0042" depending on flags). For our purposes the visible outcome
-/// is what matters; we re-derive it by detecting a leading sign or
-/// alt-form prefix.
+/// # Width measurement
+///
+/// For the common integer / float case the width is in **bytes**
+/// (matching the C source's `memset` paths in printf.c:738-770).
+/// For the UTF-8 case (`!` flag set, on a string specifier) the
+/// width is in **characters** (printf.c:868-880
+/// `adjust_width_for_utf8`). We detect this via [`FormatSpec::alt_form2`].
 pub fn apply_width(body: &str, spec: &FormatSpec) -> String {
+    // Width is measured in chars when `!` is set (UTF-8 mode), else
+    // in bytes.
+    let body_units = if spec.alt_form2 {
+        body.chars().count()
+    } else {
+        body.len()
+    };
     let target_w = spec.width.max(0) as usize;
-    if target_w <= body.len() {
+    if target_w <= body_units {
         return body.to_string();
     }
-    let pad_count = target_w - body.len();
+    let pad_count = target_w - body_units;
 
     if spec.left_justify {
-        let mut s = String::with_capacity(target_w);
+        let mut s = String::with_capacity(body.len() + pad_count);
         s.push_str(body);
         for _ in 0..pad_count {
             s.push(' ');
@@ -151,7 +159,7 @@ pub fn apply_width(body: &str, spec: &FormatSpec) -> String {
     }
 
     // Default: left-pad with spaces.
-    let mut s = String::with_capacity(target_w);
+    let mut s = String::with_capacity(body.len() + pad_count);
     for _ in 0..pad_count {
         s.push(' ');
     }

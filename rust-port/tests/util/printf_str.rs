@@ -70,9 +70,12 @@ fn s_precision_clamps_at_nul() {
 #[test]
 fn s_precision_at_utf8_boundary() {
     // "héllo" — 'h' (1), 'é' (2), 'l' (1), 'l' (1), 'o' (1) = 6 bytes.
-    // Precision 4 (bytes) gives "héll" (which truncates 'o').
+    // The C source truncates by raw byte count (printf.c:863). For
+    // precision 4, the output is the first 4 bytes: 'h' + 'é' (2 bytes)
+    // + 'l' = "hél" (3 chars, 4 bytes). The 'é' is included whole
+    // because its 2 bytes fit within the precision window.
     let s = "héllo";
-    assert_eq!(printf_str("%.4s", &[Some(s)]).unwrap(), "héll");
+    assert_eq!(printf_str("%.4s", &[Some(s)]).unwrap(), "hél");
 }
 
 // ============================================================================
@@ -94,9 +97,11 @@ fn s_alt_form2_three_byte_codepoint() {
 
 #[test]
 fn s_alt_form2_with_width() {
-    // "%!5.2s" with "héllo" → "hé   " (right-pad to width 5).
+    // "%!5.2s" with "héllo" → "   hé" (left-pad to width 5, with
+    // width measured in chars because of the `!` flag). The C source
+    // left-pads by default (adjust_width_for_utf8 path at printf.c:868).
     let s = "héllo";
-    assert_eq!(printf_str("%!5.2s", &[Some(s)]).unwrap(), "hé   ");
+    assert_eq!(printf_str("%!5.2s", &[Some(s)]).unwrap(), "   hé");
 }
 
 // ============================================================================

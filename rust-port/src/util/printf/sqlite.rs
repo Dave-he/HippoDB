@@ -44,8 +44,18 @@ pub fn render_big_q(value: Option<&str>, spec: &FormatSpec) -> SqliteResult<Stri
         Some(s) => s,
         None => return Ok("NULL".to_string()),
     };
+    // %#Q with control chars produces `unistr('...')` (printf.c:1023-1027).
+    if spec.alt_form && has_control_chars(s) {
+        let inner = escape_quotes(s, '\'', spec, false);
+        return Ok(format!("unistr('{}')", inner));
+    }
     let inner = escape_quotes(s, '\'', spec, false);
     Ok(format!("'{}'", inner))
+}
+
+/// `true` if `s` contains any byte <= 0x1f (excluding 0 which is NUL).
+fn has_control_chars(s: &str) -> bool {
+    s.bytes().any(|b| b > 0 && b <= 0x1f)
 }
 
 /// Render the body of `%w` (escape double quotes).

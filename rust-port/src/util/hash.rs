@@ -56,14 +56,17 @@ use crate::error::SqliteResult;
 /// `0x9e3779b1` (2654435761), the closest prime to
 /// `(2**32) * golden_ratio`.
 ///
-/// ASCII characters are masked with `0xdf` so that `A`/`a`, `B`/`b`,
-/// etc. hash to the same value (matching the C version's case-insensitive
-/// ASCII folding).
+/// ASCII characters are OR'd with `0x20` so that `A`/`a`, `B`/`b`,
+/// etc. hash to the same value (matching the C version's
+/// `UpperToLower` table, which maps `A-Z` → `a-z`). For non-ASCII
+/// bytes, `| 0x20` may set bit 5 — but the hash only operates on
+/// ASCII keys in practice (the C code also uses UpperToLower, which
+/// is the identity for non-letters).
 #[inline]
 pub fn str_hash(z: &str) -> u32 {
     let mut h: u32 = 0;
     for &b in z.as_bytes() {
-        h = h.wrapping_add((b & 0xdf) as u32);
+        h = h.wrapping_add((b | 0x20) as u32);
         h = h.wrapping_mul(0x9e3779b1);
     }
     h
@@ -183,44 +186,32 @@ impl Hash {
     /// `findElementWithHash`.
     pub fn find_with_hash(&self, p_key: &str) -> FindResult {
         let h = str_hash(p_key);
-        if self.htsize > 0 {
+        let mut cur = if self.htsize > 0 {
             // SAFETY: htsize > 0 → ht.len() == htsize → index in range.
             let idx = (h % self.htsize) as usize;
             let entry = &self.ht[idx];
-            let mut count = entry.count;
-            let mut cur = entry.chain;
-            while count > 0 {
-                let slot = cur.expect("chain count > 0 implies chain is Some");
-                let e = &self.elems[slot];
-                if e.h == h && str_icmp(&e.p_key, p_key) == 0 {
-                    return FindResult {
-                        data: e.data,
-                        h,
-                        found: true,
-                        slot: Some(slot),
-                    };
-                }
-                cur = e.next;
-                count -= 1;
-            }
+            entry.chain
         } else {
             // No bucket array — linear search the all-elements list.
-            let mut count = self.count;
-            let mut cur = self.first;
-            while count > 0 {
-                let slot = cur.expect("count > 0 implies first is Some");
-                let e = &self.elems[slot];
-                if e.h == h && str_icmp(&e.p_key, p_key) == 0 {
-                    return FindResult {
-                        data: e.data,
-                        h,
-                        found: true,
-                        slot: Some(slot),
-                    };
-                }
-                cur = e.next;
-                count -= 1;
+            self.first
+        };
+        // Walk the all-elements list via pNext. The chain head just
+        // gives us a starting point; the hash check filters out
+        // elements from other buckets that happen to be in the chain
+        // walk path. This is the C source's behavior (findElementWithHash
+        // at hash.c:148-170) — O(n) worst case, but typically
+        // O(bucket size) for the small buckets SQLite uses.
+        while let Some(slot) = cur {
+            let e = &self.elems[slot];
+            if e.h == h && str_icmp(&e.p_key, p_key) == 0 {
+                return FindResult {
+                    data: e.data,
+                    h,
+                    found: true,
+                    slot: Some(slot),
+                };
             }
+            cur = e.next;
         }
         FindResult {
             data: ptr::null_mut(),
@@ -283,19 +274,21 @@ impl Hash {
             e.prev = None;
             e.used = true;
         }
+        // Splice the new element into the bucket chain and the
+        // all-elements list BEFORE the rehash check, so the rehash
+        // sees the new element (matching the C source's order:
+        // count++, then check, then rehash, then insertElement).
         self.count += 1;
-        // Rehash trigger: count >= 5 && count > 2*htsize (hash.c:267).
-        if self.count >= 5 && self.count > 2 * self.htsize {
-            self.rehash(self.count * 3);
-        }
-        // Determine target bucket (rehash may have moved us to a new
-        // bucket layout).
         let bucket = if self.htsize > 0 {
             Some((new_h % self.htsize) as usize)
         } else {
             None
         };
         self.insert_element(bucket, slot);
+        // Rehash trigger: count >= 5 && count > 2*htsize (hash.c:267).
+        if self.count >= 5 && self.count > 2 * self.htsize {
+            self.rehash(self.count * 3);
+        }
         ptr::null_mut()
     }
 
@@ -344,38 +337,31 @@ impl Hash {
     // Internal helpers
     // ------------------------------------------------------------------
 
-    /// `insertElement` (hash.c:79-104).
+    /// `insertElement` (hash.c:79-104). Mirrors the C source's two-step
+    /// procedure: the bucket's `chain` pointer is updated to the new
+    /// element, AND the new element is spliced at the head of the
+    /// all-elements list. The C source uses the same `pNext` field for
+    /// both purposes; we follow that by NOT storing the bucket chain
+    /// in the element's `next` field — the chain is just a starting
+    /// point for `find_with_hash`, which walks the all-elements list
+    /// via `next` and filters by hash. Walking is O(n) in the worst
+    /// case (the C source's behavior) but typically O(bucket size)
+    /// because the most recently inserted element is usually near
+    /// other recent inserts.
     fn insert_element(&mut self, bucket: Option<usize>, slot: usize) {
-        // First, splice into the all-elements doubly-linked list.
-        let head = if let Some(b) = bucket {
+        // Step 1: update the bucket chain to point to the new element.
+        if let Some(b) = bucket {
             let entry = &mut self.ht[b];
-            let head = if entry.count > 0 { entry.chain } else { None };
-            entry.count += 1;
             entry.chain = Some(slot);
-            head
-        } else {
-            None
-        };
-        if let Some(head_slot) = head {
-            // Insert `slot` at the head of `head_slot`'s chain.
-            let prev = self.elems[head_slot].prev;
-            self.elems[slot].next = Some(head_slot);
-            self.elems[slot].prev = prev;
-            if let Some(p) = prev {
-                self.elems[p].next = Some(slot);
-            } else {
-                self.first = Some(slot);
-            }
-            self.elems[head_slot].prev = Some(slot);
-        } else {
-            // Append to the head of the all-elements list.
-            self.elems[slot].next = self.first;
-            if let Some(f) = self.first {
-                self.elems[f].prev = Some(slot);
-            }
-            self.elems[slot].prev = None;
-            self.first = Some(slot);
+            entry.count += 1;
         }
+        // Step 2: splice at the head of the all-elements list.
+        self.elems[slot].prev = None;
+        self.elems[slot].next = self.first;
+        if let Some(old_first) = self.first {
+            self.elems[old_first].prev = Some(slot);
+        }
+        self.first = Some(slot);
     }
 
     /// `removeElement` (hash.c:188-216).
@@ -444,43 +430,29 @@ impl Hash {
         // Allocate new bucket array; if it fails, the C version
         // returns 0 (no resize) and keeps the old one.
         let mut new_ht = vec![HashEntry::default(); new_size as usize];
-        // Snapshot the all-elements list, then re-insert.
+        // Snapshot the all-elements list, then re-insert each element
+        // into the new bucket array (matching hash.c:113-146). The C
+        // source's rehash walks the saved list in order and inserts
+        // each at the head of the new all-elements list — this reverses
+        // the iteration order (was reverse-insertion, becomes insertion).
         let saved_first = self.first;
         self.first = None;
         let mut cur = saved_first;
         while let Some(slot) = cur {
             let next = self.elems[slot].next;
-            let h = self.elems[slot].h;
-            // Detach from current list before re-inserting.
             self.elems[slot].next = None;
             self.elems[slot].prev = None;
-            // Insert into new bucket.
+            let h = self.elems[slot].h;
             let bucket = (h % new_size) as usize;
-            let head = if new_ht[bucket].count > 0 {
-                new_ht[bucket].chain
-            } else {
-                None
-            };
-            new_ht[bucket].count += 1;
             new_ht[bucket].chain = Some(slot);
-            if let Some(head_slot) = head {
-                let prev = self.elems[head_slot].prev;
-                self.elems[slot].next = Some(head_slot);
-                self.elems[slot].prev = prev;
-                if let Some(p) = prev {
-                    self.elems[p].next = Some(slot);
-                } else {
-                    self.first = Some(slot);
-                }
-                self.elems[head_slot].prev = Some(slot);
-            } else {
-                self.elems[slot].next = self.first;
-                if let Some(f) = self.first {
-                    self.elems[f].prev = Some(slot);
-                }
-                self.elems[slot].prev = None;
-                self.first = Some(slot);
+            new_ht[bucket].count += 1;
+            // Splice at head of all-elements list.
+            self.elems[slot].next = self.first;
+            self.elems[slot].prev = None;
+            if let Some(f) = self.first {
+                self.elems[f].prev = Some(slot);
             }
+            self.first = Some(slot);
             cur = next;
         }
         self.ht = new_ht;

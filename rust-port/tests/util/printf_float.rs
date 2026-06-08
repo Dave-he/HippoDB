@@ -111,8 +111,10 @@ fn g_uppercase() {
 
 #[test]
 fn g_precision_three() {
-    // %.3g: 3 significant digits.
-    assert_eq!(printf_float("%.3g", &[1.5]).unwrap(), "1.50");
+    // The C source's %g strips trailing zeros (printf.c:707-718),
+    // so %.3g on 1.5 → "1.5" (the trailing 0 from precision-fill is
+    // removed because flag_rtz is true by default).
+    assert_eq!(printf_float("%.3g", &[1.5]).unwrap(), "1.5");
 }
 
 #[test]
@@ -225,8 +227,8 @@ fn e_with_width_and_precision() {
 
 #[test]
 fn g_with_width_and_precision() {
-    // "%8.3g" with 1.5 → "    1.50".
-    assert_eq!(printf_float("%8.3g", &[1.5]).unwrap(), "    1.50");
+    // "%8.3g" with 1.5 → "     1.5" (5-char body, left-pad to width 8).
+    assert_eq!(printf_float("%8.3g", &[1.5]).unwrap(), "     1.5");
 }
 
 #[test]
