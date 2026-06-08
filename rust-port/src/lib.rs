@@ -4,7 +4,11 @@
 //! 内部使用 PascalCase 类型命名,与 C 源文件结构一一对应。
 
 #![deny(unsafe_op_in_unsafe_fn)]
-#![warn(missing_docs)]
+#![allow(missing_docs)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(unused_mut)]
+#![allow(dead_code)]
 
 mod api;
 mod error;

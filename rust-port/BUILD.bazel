@@ -12,6 +12,10 @@ rust_library(
             "src/*.rs",
             "src/util/*.rs",
             "src/util/printf/*.rs",
+            "src/btree/*.rs",
+            "src/pager/*.rs",
+            "src/tokenize/*.rs",
+            "src/vfs/*.rs",
         ],
         exclude = ["src/main.rs"],
     ),
@@ -29,6 +33,20 @@ rust_test(
     name = "libsqlite_rs_test",
     crate = ":libsqlite_rs",
     # 跟 cargo test 行为一致: 跑所有 #[test] / #[cfg(test)] mod
+)
+
+# 集成测试 (tests/util.rs 拉子模块)
+rust_test(
+    name = "util_integration",
+    srcs = glob(
+        [
+            "tests/util.rs",
+            "tests/util/*.rs",
+        ],
+    ),
+    edition = "2021",
+    crate_root = "tests/util.rs",
+    deps = [":libsqlite_rs"],
 )
 
 # 注: tests/util.rs (含 printf/datetime/random/str 集成测试) 暂未接入 Bazel —
