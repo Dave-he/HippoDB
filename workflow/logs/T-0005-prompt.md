@@ -36,12 +36,12 @@
 - **要写测试**:`tests/util/hash.rs: insert/lookup/delete/resize 100k 元素压测; GrowableArray 边界条件(空/满/倍增/收缩)。`
 - **估计轮数**:`25`
 
-## 上次尝试的反馈 (attempt #2)
+## 上次尝试的反馈 (attempt #4)
 
 你的上一次实现有以下问题:
 
 ```
-killed by Hermes after 22min no-result; Claude API appears to hang on str.rs (a small task)
+claude read 7 files but wrote 0; prompt may be too cautious
 ```
 
 **请读 `workflow/logs/T-0005-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。

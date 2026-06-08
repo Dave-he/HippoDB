@@ -23,3 +23,12 @@
 [2026-06-07T16:00:48Z] [event] runner exit=0
 [2026-06-07T16:12:59Z] [event] event_router source=runner-fail task=T-0004 pr=0 run=
 [2026-06-07T16:12:59Z] [event] runner-fail for T-0004 attempts=4, backoff 300s
+[2026-06-07T16:18:00Z] [event] runner exit=0
+[2026-06-07T16:24:59Z] [event] event_router source=runner-fail task=T-0004 pr=0 run=
+[2026-06-07T16:24:59Z] [event] runner-fail for T-0004 attempts=5, backoff 300s
+[2026-06-07T16:30:01Z] [event] runner exit=0
+[2026-06-08T00:20:02Z] [event] event_router source=runner-fail task=T-0005 pr=0 run=
+[2026-06-08T00:20:02Z] [event] runner-fail for T-0005 attempts=4, backoff 300s
+[2026-06-08T00:25:02Z] [event] runner exit=0
+[2026-06-08T00:39:05Z] [event] event_router source=runner-fail task=T-0005 pr=0 run=
+[2026-06-08T00:39:05Z] [event] runner-fail for T-0005 attempts=5, backoff 300s

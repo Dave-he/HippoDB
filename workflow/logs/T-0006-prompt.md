@@ -25,12 +25,12 @@
 - **要写测试**:`tests/util/str.rs: 8 用例, 包括 ASCII / 混合大小写 / 长度不等 / 含 UTF-8 字节(只比较前 N)。`
 - **估计轮数**:`15`
 
-## 上次尝试的反馈 (attempt #1)
+## 上次尝试的反馈 (attempt #2)
 
 你的上一次实现有以下问题:
 
 ```
-killed by Hermes after 22min no-result; Claude API appears to hang on str.rs (a small task)
+claude read 10 files but wrote 0; prompt may be too cautious
 ```
 
 **请读 `workflow/logs/T-0006-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
