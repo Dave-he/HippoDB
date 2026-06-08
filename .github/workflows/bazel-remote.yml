@@ -1,0 +1,52 @@
+name: Bazel Remote Build (BuildBuddy)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# cancel in-progress runs for same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bazelbuild/setup-bazelisk@v2
+        with:
+          bazelisk-cache: true
+
+      - name: Cache bazel repos
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ runner.os }}-bazel-${{ hashFiles('rust-port/.bazelversion', 'rust-port/MODULE.bazel', 'rust-port/.bazelrc', 'rust-port/**/BUILD.bazel') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
+
+      - name: Build + test (BuildBuddy remote cache + executor)
+        run: |
+          cd rust-port
+          bazel build //...
+          bazel test //...:all --config=ci-remote
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+      - name: Upload BES results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildbuddy-bes
+          path: |
+            bazel-testlogs/**
+            bazel-bin/test.log
+          if-no-files-found: ignore

@@ -1,0 +1,43 @@
+# Bazel build configuration for libsqlite_rs
+# ============================================
+# 公共 (本机/远端共用) —————————————————————————————————
+common --enable_bzlmod
+common --noenable_workspace
+common --copt=-O2
+common --copt=-fno-omit-frame-pointer
+
+# 全局 enable remote cache (本机也会写, 写不到也不致命, 因为
+# read 是 best-effort, 远端不可达就本地重建)
+build --remote_cache=grpcs://cloud.buildbuddy.io
+build --remote_timeout=3600
+build --remote_max_connections=200
+
+build:ci --test_output=errors
+build:ci --build_runfile_links=false
+
+# 远端执行 (BuildBuddy SaaS 的 RBE) ——————————————————————
+# 切到 ci-remote config 才会启用
+build:ci-remote --config=ci
+build:ci-remote --remote_executor=grpcs://cloud.buildbuddy.io
+build:ci-remote --bes_backend=grpcs://cloud.buildbuddy.io
+build:ci-remote --bes_results_url=https://app.buildbuddy.io/invocation/
+build:ci-remote --remote_default_exec_properties=OSFamily=linux,container-image=docker://ghcr.io/bazelbuild/rules_rust:rules_rust_0.62.0
+
+# API key 注入 —————————————————————————————————————
+# 优先级: ~/.config/bazel/bazelrc (用户自配, 0600) > env var > 命令行
+# 永远不要把 API key 写进这个文件 (它会进 git)
+try-import %workspace%/../.bazelrc.local 2>/dev/null || true
+try-import ~/.config/bazel/bazelrc 2>/dev/null || true
+
+# BuildBuddy 标识 (BES 必填, 无 secret, OK 进 git) —————————————
+build --remote_header=x-buildbuddy-platform=ci
+build --remote_header=x-buildbuddy-app=libsqlite_rs
+build:ci-remote --remote_header=x-buildbuddy-label=rust-port
+
+# 性能 —————————————————————————————————————
+build --jobs=HOST_CPUS*2
+build --local_test_jobs=HOST_CPUS
+build --action_env=PATH
+
+# Rust toolchain
+build --@rules_rust//rust/settings:extra_rustc_flags=-D warnings

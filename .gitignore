@@ -8,3 +8,12 @@ backlog/.tmp
 # Rust
 rust-port/target/
 rust-port/Cargo.lock
+
+# Bazel (本机 0 编译, 但 bazelisk 会在 rust-port/ 落 symlink + cache)
+rust-port/bazel-*
+rust-port/bazelisk-*
+rust-port/MODULE.bazel.lock
+
+# 用户级 credentials (保险起见)
+**/bazelrc.local
+**/.bazelrc.local

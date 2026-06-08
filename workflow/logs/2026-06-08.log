@@ -99,3 +99,14 @@
 [2026-06-08T01:08:53Z]   T-0006 STALLED: 5 reads but 0 writes of any kind
 [2026-06-08T01:08:53Z]   cargo check OK
 [2026-06-08T01:10:00Z] another runner holds the lock, exiting
+[2026-06-08T01:13:53Z]   cargo test TIMEOUT
+[2026-06-08T01:13:53Z] === runner end — T-0006 -> stalled (attempts=4) ===
+[2026-06-08T01:13:53Z]   → event: trigger runner-fail (backoff retry)
+[2026-06-08T01:13:53Z]     trigger pid=33359
+[2026-06-08T01:14:23Z] === runner start ===
+[2026-06-08T01:14:23Z] dispatching T-0004: port UTF-8 helpers (sqlite3Utf8Read/Write/Compare)
+[2026-06-08T01:24:24Z]   T-0004 HARD TIMEOUT after 600s, killing claude
+[2026-06-08T01:24:24Z]   T-0004 killed: hard_timeout_600s
+[2026-06-08T01:24:24Z]   T-0004 done: turns=0 cost=$0.000 write/edit=0 bash=11 read=15 text_len=0 subtype=error_killed
+[2026-06-08T01:24:24Z]   T-0004 STALLED: 15 reads but 0 writes of any kind
+[2026-06-08T01:24:24Z]   cargo check OK

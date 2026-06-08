@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//:libsqlite_rs"])
+
+rust_library(
+    name = "util",
+    srcs = glob(
+        ["*.rs"],
+        exclude = ["test_*.rs"],
+    ),
+    edition = "2021",
+    crate_root = "mod.rs",
+)
+
+rust_test(
+    name = "util_test",
+    crate = ":util",
+    srcs = glob(["*.rs"]),
+)

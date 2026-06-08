@@ -36,3 +36,5 @@
 [2026-06-08T00:56:12Z] [event] event_router source=runner-fail task=T-0006 pr=0 run=
 [2026-06-08T00:56:12Z] [event] runner-fail for T-0006 attempts=4, backoff 300s
 [2026-06-08T01:01:12Z] [event] runner exit=0
+[2026-06-08T01:13:53Z] [event] event_router source=runner-fail task=T-0006 pr=0 run=
+[2026-06-08T01:13:53Z] [event] runner-fail for T-0006 attempts=0, backoff 30s

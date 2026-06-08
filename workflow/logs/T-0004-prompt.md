@@ -31,16 +31,6 @@
 - **要写测试**:`tests/util/utf8.rs: 12+ 用例,包括 ASCII / 2-byte / 3-byte / 4-byte 字符 / 截断序列 / surrogate 拒绝 / overlong 拒绝 / 空串。`
 - **估计轮数**:`20`
 
-## 上次尝试的反馈 (attempt #4)
-
-你的上一次实现有以下问题:
-
-```
-claude read 6 files but wrote 0; prompt may be too cautious
-```
-
-**请读 `workflow/logs/T-0004-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, **先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。
-
 
 ## ⚠️ 关键行为要求(违反任何一个直接 `failed`)
 

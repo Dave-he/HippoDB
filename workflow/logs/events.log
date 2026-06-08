@@ -74,3 +74,6 @@
 [2026-06-08T01:03:17Z] [event] event_router source=runner-done task= pr=0 run=
 [2026-06-08T01:03:17Z] [event] runner-done → immediate next dispatch
 [2026-06-08T01:03:17Z] [event] runner exit=0
+[2026-06-08T01:13:53Z] [event] runner exit=0
+[2026-06-08T01:13:53Z] [event] event_router source=runner-fail task=T-0006 pr=0 run=
+[2026-06-08T01:13:53Z] [event] runner-fail for T-0006 attempts=0, backoff 30s

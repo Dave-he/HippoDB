@@ -102,7 +102,7 @@ def render_prompt(task: dict) -> str:
             f"\n## 上次尝试的反馈 (attempt #{task.get('attempts')})\n\n"
             f"你的上一次实现有以下问题:\n\n```\n{le}\n```\n\n"
             f"**请读 `workflow/logs/{task['id']}-stream.jsonl` 和 `workflow/logs/2026-06-07.log` 看完整 stream, "
-            f"**先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `cargo test pattern::test_name` 单测调试。\n"
+            f"**先修这些具体失败**, 不要从头重写。如果失败在 4 个特定 test, 优先跑 `bazel test //src/util:util_test --test_arg=pattern::test_name` 单测调试。\n"
         )
 
     return (
@@ -552,14 +552,78 @@ def render_state(items: list) -> str:
 
 
 def sanity_build() -> bool:
-    """跑 cargo check + cargo test 验证。
+    """跑 bazel build + bazel test 验证 (走 BuildBuddy remote cache).
 
+    2026-06-08 pivot: 从 cargo 改 bazel. 本地 0 编译, 远端命中 < 5s.
     Returns True iff 全过。
-    - cargo check: 编译通过
-    - cargo test: 所有测试通过 (这是 1:1 port 的关键)
+    - bazel build //...: 编译通过
+    - bazel test //...:all: 所有测试通过
     """
+    # 检测 bazelisk 是否就绪
+    if not _has_bazel():
+        log("  ⚠️  bazelisk not found, falling back to cargo (deprecated, will fail post-T-0016)")
+        return _cargo_fallback_sanity()
+
+    if not (WORKDIR / "BUILD.bazel").exists():
+        log("  rust workspace has no BUILD.bazel yet (T-0016 not done); skipping bazel sanity")
+        return True
+
+    # 1) bazel build
+    try:
+        r = subprocess.run(
+            ["bazel", "build", "//...", "--remote_download_minimal"],
+            cwd=WORKDIR, capture_output=True, text=True, timeout=300,  # 5min 上限 (远端冷启 60-90s, cache hit < 5s)
+        )
+        if r.returncode != 0:
+            log(f"  bazel build FAILED:\n{(r.stdout + r.stderr)[-1500:]}")
+            return False
+        log("  bazel build OK (remote cache/exec)")
+    except subprocess.TimeoutExpired:
+        log("  bazel build TIMEOUT (5min, 远端可能 hang, 验 BuildBuddy status: https://status.buildbuddy.io)")
+        return False
+    except FileNotFoundError as e:
+        log(f"  bazel not found: {e}")
+        return False
+
+    # 2) bazel test
+    try:
+        r = subprocess.run(
+            ["bazel", "test", "//...:all", "--test_output=errors"],
+            cwd=WORKDIR, capture_output=True, text=True, timeout=600,
+        )
+        if r.returncode != 0:
+            import re
+            combined = r.stdout + r.stderr
+            # 提取失败测试
+            failed_names = re.findall(r"^FAIL: (\S+)", combined, re.MULTILINE)
+            failed_summary = ", ".join(failed_names[:10]) or "unknown"
+            log(f"  bazel test FAILED: {len(failed_names)} failures")
+            for fn in failed_names[:5]:
+                log(f"    - {fn}")
+            sanity_build.last_error = (
+                f"bazel test failed: {failed_summary}. fix specific failures, "
+                f"see workflow/logs/ for full stream."
+            )
+            return False
+        log("  bazel test OK")
+        sanity_build.last_error = None
+        return True
+    except subprocess.TimeoutExpired:
+        log("  bazel test TIMEOUT (10min)")
+        sanity_build.last_error = "bazel test timeout"
+        return False
+
+
+def _has_bazel() -> bool:
+    """bazelisk 在 PATH? 找不到就走 cargo fallback (T-0016 没落地前)."""
+    import shutil
+    return shutil.which("bazel") is not None
+
+
+def _cargo_fallback_sanity() -> bool:
+    """T-0016 落地前的临时 fallback. 不要长期依赖."""
     if not (WORKDIR / "Cargo.toml").exists():
-        log("rust workspace not yet initialized; skipping sanity build")
+        log("  no Cargo.toml / BUILD.bazel; skip")
         return True
     try:
         r = subprocess.run(
@@ -569,44 +633,20 @@ def sanity_build() -> bool:
         if r.returncode != 0:
             log(f"  cargo check FAILED:\n{r.stderr[-1500:]}")
             return False
-        log("  cargo check OK")
-    except subprocess.TimeoutExpired:
-        log("  cargo check TIMEOUT")
+        log("  cargo check OK (fallback mode)")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
-
-    # 跑 test, 任何失败都拒绝 commit
     try:
         r = subprocess.run(
             ["cargo", "test", "--workspace", "--all-targets", "--no-fail-fast"],
             cwd=WORKDIR, capture_output=True, text=True, timeout=300,
         )
         if r.returncode != 0:
-            # 提取失败计数
-            import re
-            m = re.search(r"test result.*?(\d+) passed.*?(\d+) failed", r.stdout + r.stderr)
-            fail_info = m.group(0) if m else "unknown"
-
-            # 提取失败的具体测试名 (前 10 个)
-            failed_names = re.findall(r"^---- (\S+) stdout", r.stdout + r.stderr, re.MULTILINE)
-            failed_summary = ", ".join(failed_names[:10])
-
-            log(f"  cargo test FAILED ({fail_info}):")
-            for fn in failed_names[:5]:
-                log(f"    - {fn}")
-
-            # 写进 last_error 字典, 让 demote 时能传给 task
-            sanity_build.last_error = (
-                f"cargo test failed: {fail_info}. failed tests: {failed_summary}. "
-                f"fix these specific test failures in src/util/pattern.rs (or wherever the bug is)."
-            )
+            log(f"  cargo test FAILED:\n{r.stdout[-1500:]}")
             return False
-        log("  cargo test OK")
-        # 清掉上次的错误
-        sanity_build.last_error = None
+        log("  cargo test OK (fallback mode)")
         return True
-    except subprocess.TimeoutExpired:
-        log("  cargo test TIMEOUT")
-        sanity_build.last_error = "cargo test timeout"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
 

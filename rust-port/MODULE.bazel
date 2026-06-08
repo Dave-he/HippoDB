@@ -1,0 +1,16 @@
+module(
+    name = "libsqlite_rs",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_rust", version = "0.62.0")
+bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "crc32fast", version = "1.4.2")
+
+# 内部 crates (路径)
+bazel_dep(name = "libsqlite_rs_util", version = "0.0.0")
+bazel_dep(name = "libsqlite_rs_pager", version = "0.0.0")
+bazel_dep(name = "libsqlite_rs_btree", version = "0.0.0")
+bazel_dep(name = "libsqlite_rs_vdbe", version = "0.0.0")

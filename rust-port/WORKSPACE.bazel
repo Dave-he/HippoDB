@@ -1,0 +1,3 @@
+# Legacy WORKSPACE (bzlmod 启用后只是占位, 避免其他工具误判)
+# 真实依赖在 MODULE.bazel
+workspace(name = "libsqlite_rs")

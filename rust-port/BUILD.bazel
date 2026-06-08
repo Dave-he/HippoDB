@@ -1,0 +1,33 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# 主 crate: libsqlite_rs
+rust_library(
+    name = "libsqlite_rs",
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/main.rs"],
+    ),
+    edition = "2021",
+    crate_root = "src/lib.rs",
+    deps = [
+        "//src/util:util",
+    ],
+)
+
+# 测试 (不依赖 cargo, 走 rust_test)
+rust_test(
+    name = "libsqlite_rs_test",
+    crate = ":libsqlite_rs",
+    # 跟 cargo test 行为一致: 跑所有 #[test] / #[cfg(test)] mod
+)
+
+# CLI 入口 (sqlite3 CLI)
+rust_binary(
+    name = "sqlite3",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    crate_root = "src/main.rs",
+    deps = [":libsqlite_rs"],
+)

@@ -34,7 +34,8 @@
    在 `notes/{{ID}}-discovery.md` 写 5 行说明, 然后**继续按 C 源码实现,不要停下来**。
 3. **如果现有桩代码错了(比如 T-0001 的 malloc(0) 假非 null 指针),直接替换它**,
    不要保留旧行为。
-4. **写完代码后必须跑 `cargo check` 和 `cargo test`**, 在返回的 JSON 里报告结果。
+4. **写完代码后必须跑 `bazel build //...` 和 `bazel test //...:all`**, 在返回的 JSON 里报告结果。
+   (注: 2026-06-08 起编译工具链从 cargo 切到 bazel + BuildBuddy 远端. 本地 0 编译.)
 
 ## 硬性要求
 
@@ -62,7 +63,7 @@
   "status": "done" | "blocked" | "failed",
   "files_created": ["..."],
   "files_modified": ["..."],
-  "tests_run": "cargo test ... (输出末 20 行)",
+  "tests_run": "bazel test //...:all (输出末 20 行)",
   "diff_summary": "1-2 句中文描述",
   "next_action": "如果 status=blocked,写明等什么;如果 done,写下一任务建议"
 }
@@ -74,8 +75,8 @@
 ## 硬性约束(违反任何一个直接 `failed`)
 
 - ❌ 改动 `sqlite-source/` 下任何文件
-- ❌ `cargo build` 失败但 commit
+- ❌ `bazel build` 失败但 commit
 - ❌ 跑测试不通过就标 done
 - ❌ 写 `unwrap()` 处理 OOM(`db.malloc_failed` 是 C 风格的延后错误,要复刻)
 - ❌ 改公开 API 签名(只允许新增,不允许改/删)
-- ❌ 跳过读 `plans/02-c-porting-conventions.md`
+- ❌ 跳过读 `plans/02-c-porting-conventions.md` 和 `rust-port/README-bazel.md`
