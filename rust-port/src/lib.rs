@@ -9,6 +9,7 @@
 mod api;
 mod error;
 mod handle;
+pub mod pager;
 pub mod util;
 pub mod vfs;
 
