@@ -10,6 +10,7 @@ mod api;
 mod error;
 mod handle;
 pub mod util;
+pub mod vfs;
 
 pub use api::{
     sqlite3_close, sqlite3_errcode, sqlite3_errmsg, sqlite3_libversion,
