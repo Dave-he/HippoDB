@@ -9,6 +9,7 @@
 mod api;
 mod error;
 mod handle;
+pub mod btree;
 pub mod pager;
 pub mod tokenize;
 pub mod util;
