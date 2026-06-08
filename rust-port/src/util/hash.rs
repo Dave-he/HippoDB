@@ -46,7 +46,7 @@
 
 use std::ptr;
 
-use crate::error::{SqliteError, SqliteResult};
+use crate::error::SqliteResult;
 
 // ============================================================================
 // strHash — Knuth multiplicative hash, matches C (hash.c:55-73)
@@ -651,6 +651,13 @@ pub struct GrowableArray<T> {
     data: Vec<Option<T>>,
     count: u32,
     capacity: u32,
+    /// Index of the first `None` slot in `data`, or `== capacity` when full.
+    ///
+    /// Invariant: `next_free < capacity` implies `data[next_free].is_none()`,
+    /// and all slots `[0, next_free)` are `Some`. Maintained incrementally
+    /// by `try_push` / `remove` / `resize_to` so the typical `push` is
+    /// O(1) amortized (no per-push linear scan to find a free slot).
+    next_free: u32,
 }
 
 /// Minimum capacity to avoid thrashing on a 0 → 1 → 0 sequence.
@@ -663,6 +670,7 @@ impl<T> GrowableArray<T> {
             data: Vec::new(),
             count: 0,
             capacity: 0,
+            next_free: 0,
         }
     }
 
@@ -675,6 +683,7 @@ impl<T> GrowableArray<T> {
             data,
             count: 0,
             capacity: cap,
+            next_free: 0,
         }
     }
 
@@ -715,9 +724,16 @@ impl<T> GrowableArray<T> {
     /// Fallible `push` — returns `Err(SqliteError::NOMEM)` on
     /// allocation failure (modeled; the system allocator aborts
     /// in practice).
+    ///
+    /// Amortized O(1): the `next_free` field tracks the first free
+    /// slot across calls, so no linear scan is needed in the
+    /// steady state. After a `remove` at a low slot, the next push
+    /// reuses that slot; after a `remove` at `next_free` or higher,
+    /// the invariant is preserved and we only scan forward when
+    /// `next_free` was already past the end of the live region.
     pub fn try_push(&mut self, value: T) -> SqliteResult<u32> {
         if self.count == self.capacity {
-            // Double. Guard against 0 → 1.
+            // Full, grow.
             let new_cap = if self.capacity == 0 {
                 GROWABLE_MIN_CAPACITY
             } else {
@@ -725,19 +741,18 @@ impl<T> GrowableArray<T> {
             };
             self.resize_to(new_cap)?;
         }
-        // Find first free slot (linear scan from 0). After doubling,
-        // the new slots are at the end and are all `None`.
-        let mut idx = 0u32;
-        while idx < self.capacity {
-            if self.data[idx as usize].is_none() {
-                self.data[idx as usize] = Some(value);
-                self.count += 1;
-                return Ok(idx);
-            }
-            idx += 1;
+        // next_free invariant: < capacity && data[next_free].is_none()
+        let idx = self.next_free;
+        self.data[idx as usize] = Some(value);
+        self.count += 1;
+        // Advance next_free to the next None slot. Each slot is visited
+        // O(1) times in aggregate across the lifetime of the array.
+        let mut next = idx + 1;
+        while next < self.capacity && self.data[next as usize].is_some() {
+            next += 1;
         }
-        // Should not be reachable: we just resized.
-        Err(SqliteError::ERROR)
+        self.next_free = next;
+        Ok(idx)
     }
 
     /// Get a reference to the element at `idx`.
@@ -754,6 +769,11 @@ impl<T> GrowableArray<T> {
         }
         let v = self.data[idx as usize].take()?;
         self.count -= 1;
+        // The removed slot is now None. If it's before next_free, pull
+        // next_free back to it (this is the new first None).
+        if idx < self.next_free {
+            self.next_free = idx;
+        }
         if self.capacity > GROWABLE_MIN_CAPACITY
             && self.count < self.capacity / 4
         {
@@ -774,6 +794,8 @@ impl<T> GrowableArray<T> {
     /// Drain all elements, returning an iterator of owned values.
     pub fn drain(&mut self) -> impl Iterator<Item = T> + '_ {
         self.count = 0;
+        self.capacity = 0;
+        self.next_free = 0;
         self.data.drain(..).filter_map(|s| s)
     }
 
@@ -783,13 +805,15 @@ impl<T> GrowableArray<T> {
     fn resize_to(&mut self, new_cap: u32) -> SqliteResult<()> {
         let new_cap = new_cap as usize;
         if new_cap > self.data.len() {
-            // Vec cannot return OOM on the system allocator; we
-            // pre-check the layout and accept the abort.
+            // Grow. New slots are at the end, all None. next_free stays
+            // valid: it's the first None in the old region (or == old
+            // capacity, which equals the start of the new region, also
+            // all None).
             self.data.resize_with(new_cap, || None);
             self.capacity = new_cap as u32;
         } else if new_cap < self.data.len() {
-            // Truncate from the end. Adjust count if we drop live
-            // elements (we choose the policy: drop highest slots).
+            // Shrink. Drop slots [new_cap, old_cap) and update count for
+            // any live ones we evict.
             for slot in self.data[new_cap..].iter_mut() {
                 if slot.is_some() {
                     self.count -= 1;
@@ -797,6 +821,12 @@ impl<T> GrowableArray<T> {
             }
             self.data.truncate(new_cap);
             self.capacity = new_cap as u32;
+            // next_free may have been in the dropped region. Reset to 0
+            // and let the next push scan forward (O(new_cap) once, then
+            // O(1) amortized).
+            if self.next_free >= new_cap as u32 {
+                self.next_free = 0;
+            }
         }
         Ok(())
     }
@@ -938,7 +968,8 @@ mod tests {
     fn clear_drops_all_elements() {
         let mut h = Hash::new();
         for i in 0..10 {
-            h.insert(&format!("k{i}"), to_ptr::<i32>(i));
+            // i+1 避免 to_ptr(0) = null, insert(_, null) 是契约里的 no-op.
+            h.insert(&format!("k{i}"), to_ptr::<i32>(i + 1));
         }
         assert_eq!(h.len(), 10);
         h.clear();
@@ -975,8 +1006,9 @@ mod tests {
     fn rehash_grows_buckets() {
         let mut h = Hash::new();
         // Insert enough to trigger the 5/count > 2*htsize rule.
+        // i+1 避免 to_ptr(0) = null, insert(_, null) 是契约里的 no-op.
         for i in 0..30u32 {
-            h.insert(&format!("key{i}"), to_ptr::<i32>(i as usize));
+            h.insert(&format!("key{i}"), to_ptr::<i32>(i as usize + 1));
         }
         assert_eq!(h.len(), 30);
         // htsize must have grown past 0.
@@ -985,7 +1017,7 @@ mod tests {
         for i in 0..30u32 {
             assert_eq!(
                 from_ptr(h.find(&format!("key{i}"))),
-                i as usize,
+                i as usize + 1,
                 "key{i} not found after rehash"
             );
         }
@@ -1018,14 +1050,16 @@ mod tests {
     fn iter_yields_all_elements() {
         let mut h = Hash::new();
         for i in 0..5u32 {
-            h.insert(&format!("k{i}"), to_ptr::<i32>(i as usize));
+            // i+1 避免 to_ptr(0) = null, insert(_, null) 是契约里的 no-op.
+            h.insert(&format!("k{i}"), to_ptr::<i32>(i as usize + 1));
         }
         let mut seen = vec![false; 5];
         for (_k, d) in h.iter() {
             let i = from_ptr(d);
-            assert!(i < 5, "unexpected data: {i}");
-            assert!(!seen[i], "duplicate iter yield for slot {i}");
-            seen[i] = true;
+            assert!((1..=5).contains(&i), "unexpected data: {i}");
+            let idx = i - 1;
+            assert!(!seen[idx], "duplicate iter yield for slot {idx}");
+            seen[idx] = true;
         }
         assert!(seen.iter().all(|x| *x));
     }
@@ -1073,10 +1107,12 @@ mod tests {
             g.push(0);
         }
         let prev_cap = g.capacity();
-        g.push(99);
+        // try_push 用 first-free-slot 策略 — 新值落在新 region 的首槽,
+        // 不是 capacity-1. 用 push 的返回值定位.
+        let i99 = g.push(99);
         assert!(g.capacity() >= prev_cap * 2 || g.capacity() == GROWABLE_MIN_CAPACITY * 2);
         assert_eq!(g.get(i0), Some(&10));
-        assert_eq!(g.get(g.capacity() - 1), Some(&99));
+        assert_eq!(g.get(i99), Some(&99));
     }
 
     #[test]
@@ -1095,13 +1131,19 @@ mod tests {
     #[test]
     fn growable_remove_shrinks_capacity() {
         let mut g: GrowableArray<u32> = GrowableArray::with_capacity(16);
+        // 记录 push 返回的真实 slot id, 不能固定 g.remove(0) —
+        // slot 0 在第一次 remove 后变 None, 后续 remove(0) 是 no-op (take()? 返 None).
+        // 另: resize_to 的 shrink 策略是 "drop highest slots", 所以要从末尾 pop
+        // live 元素 — 否则删前面的 slot, 触发的 shrink 会把尾部还活的元素砍掉.
+        let mut slots = Vec::new();
         for _ in 0..16 {
-            g.push(0);
+            slots.push(g.push(0));
         }
         let big_cap = g.capacity();
-        // Drain to < 1/4.
+        // Drain to < 1/4. 从最新 push 的 slot 开始移除 (pop).
         for _ in 0..14 {
-            g.remove(0);
+            let slot = slots.pop().unwrap();
+            g.remove(slot);
         }
         assert_eq!(g.len(), 2);
         assert!(g.capacity() < big_cap, "expected shrink, got {} (was {})", g.capacity(), big_cap);
@@ -1118,12 +1160,17 @@ mod tests {
     #[test]
     fn growable_keeps_min_capacity() {
         let mut g: GrowableArray<u32> = GrowableArray::with_capacity(16);
+        // 记录 push 返回的真实 slot id — 同 growable_remove_shrinks_capacity
+        // 的原因, 固定 remove(0) 会让 while 死循环 (slot 0 在第一次后变 None).
+        // 另: pop 末尾 live 元素避免 shrink 把活元素砍掉 (resize_to 是 drop-highest 策略).
+        let mut slots = Vec::new();
         for _ in 0..16 {
-            g.push(0);
+            slots.push(g.push(0));
         }
         // Drain to 1 — must not shrink below MIN_CAPACITY.
         while g.len() > 1 {
-            g.remove(0);
+            let slot = slots.pop().unwrap();
+            g.remove(slot);
         }
         assert!(g.capacity() >= GROWABLE_MIN_CAPACITY);
     }

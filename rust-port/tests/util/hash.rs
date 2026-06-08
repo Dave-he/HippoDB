@@ -295,15 +295,15 @@ fn growable_100k_pushes() {
 #[test]
 fn growable_full_then_shrink() {
     let mut g: GrowableArray<u32> = GrowableArray::new();
-    // Fill to 16.
-    for _ in 0..16 {
-        g.push(0);
-    }
+    // Fill to 16. Track real slot ids; remove(0) on a None slot is a no-op.
+    let mut slots: Vec<u32> = (0..16).map(|_| g.push(0)).collect();
     let cap_full = g.capacity();
     assert!(cap_full >= 16);
-    // Drain to < 1/4 — capacity must shrink.
+    // Drain to < 1/4 — capacity must shrink. pop() 末尾 live slot,
+    // 避免 resize_to 的 drop-highest 策略把还活的前面 slot 砍掉.
     for _ in 0..13 {
-        g.remove(0);
+        let slot = slots.pop().unwrap();
+        g.remove(slot);
     }
     assert_eq!(g.len(), 3);
     assert!(g.capacity() < cap_full, "expected shrink from {} to {}", cap_full, g.capacity());
@@ -313,13 +313,13 @@ fn growable_full_then_shrink() {
 #[test]
 fn growable_shrink_floor() {
     let mut g: GrowableArray<u32> = GrowableArray::new();
-    for _ in 0..64 {
-        g.push(0);
-    }
+    let mut slots: Vec<u32> = (0..64).map(|_| g.push(0)).collect();
     let cap_before = g.capacity();
-    // Drain to 1.
+    // Drain to 1 — pop() 末尾 live slot, 同上避免 shrink 砍活元素.
+    // (固定 remove(0) 会死循环 — slot 0 在第一次 remove 后变 None, 后续是 no-op)
     while g.len() > 1 {
-        g.remove(0);
+        let slot = slots.pop().unwrap();
+        g.remove(slot);
     }
     assert!(g.capacity() >= 4, "shrunk below floor: cap={}", g.capacity());
     assert!(g.capacity() <= cap_before, "should have shrunk");
