@@ -12,13 +12,18 @@
 
 mod api;
 mod error;
+pub mod expr;
+pub mod func;
 mod handle;
 pub mod btree;
 pub mod pager;
 pub mod parse;
+pub mod resolve;
 pub mod tokenize;
 pub mod util;
+pub mod vdbe;
 pub mod vfs;
+pub mod where_compiler;
 
 pub use api::{
     sqlite3_close, sqlite3_errcode, sqlite3_errmsg, sqlite3_libversion,
@@ -26,7 +31,15 @@ pub use api::{
     sqlite3_open_v2,
 };
 pub use error::SqliteError;
+pub use expr::{
+    BinaryOp, EvalEnv, Expr, FunctionRegistry, Literal, NullRegistry, RowEnv, SimpleEnv, SqliteValue,
+    UnaryOp, eval, eval_glob, eval_like,
+};
+pub use func::BuiltinRegistry;
 pub use handle::SqliteDb;
+pub use resolve::{ResolvedSelect, ResolvedStmt, resolve, resolve_select};
+pub use vdbe::{ColumnInfo, Mem, Op, Row, Schema, Table, VdbeProgram, exec};
+pub use where_compiler::{compile_create, compile_drop, compile_insert, compile_select, compile_stmt, run_select, run_sql};
 pub use util::alloc::{Malloc, SQLITE_MAX_ALLOCATION_SIZE};
 pub use util::pattern::{
  sqlite3_strglob, sqlite3_strlike, SQLITE_MATCH, SQLITE_NOMATCH, SQLITE_NOWILDCARDMATCH,
