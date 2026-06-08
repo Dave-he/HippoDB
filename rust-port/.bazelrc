@@ -26,8 +26,8 @@ build:ci-remote --remote_default_exec_properties=OSFamily=linux,container-image=
 # API key 注入 —————————————————————————————————————
 # 优先级: ~/.config/bazel/bazelrc (用户自配, 0600) > env var > 命令行
 # 永远不要把 API key 写进这个文件 (它会进 git)
-try-import %workspace%/../.bazelrc.local 2>/dev/null || true
-try-import ~/.config/bazel/bazelrc 2>/dev/null || true
+try-import %workspace%/../.bazelrc.local
+try-import ~/.config/bazel/bazelrc
 
 # BuildBuddy 标识 (BES 必填, 无 secret, OK 进 git) —————————————
 build --remote_header=x-buildbuddy-platform=ci
@@ -39,5 +39,5 @@ build --jobs=HOST_CPUS*2
 build --local_test_jobs=HOST_CPUS
 build --action_env=PATH
 
-# Rust toolchain
-build --@rules_rust//rust/settings:extra_rustc_flags=-D warnings
+# Rust toolchain — list-typed flag, 逗号分隔多个值
+build --@rules_rust//rust/settings:extra_rustc_flags=-Dwarnings

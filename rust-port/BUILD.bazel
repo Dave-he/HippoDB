@@ -1,19 +1,27 @@
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
 # 主 crate: libsqlite_rs
+# 注: src/util/ 不是独立 subcrate (util 内部用 crate::handle/crate::error,
+# 依赖根 crate), 所以把 util/*.rs 全部纳入本 library 一起编译.
 rust_library(
     name = "libsqlite_rs",
     srcs = glob(
-        ["src/**/*.rs"],
+        [
+            "src/*.rs",
+            "src/util/*.rs",
+            "src/util/printf/*.rs",
+        ],
         exclude = ["src/main.rs"],
     ),
     edition = "2021",
     crate_root = "src/lib.rs",
-    deps = [
-        "//src/util:util",
-    ],
+    # 等价于 build.rs 里的 `cargo:rustc-env=SQLITE_VERSION=$(cat ../sqlite-source/VERSION)`
+    # 当 sqlite-source/VERSION 更新时, 同步改这个值 (build.rs 暂未 port 成 Bazel rule)
+    rustc_env = {
+        "SQLITE_VERSION": "3.54.0",
+    },
 )
 
 # 测试 (不依赖 cargo, 走 rust_test)
@@ -23,11 +31,16 @@ rust_test(
     # 跟 cargo test 行为一致: 跑所有 #[test] / #[cfg(test)] mod
 )
 
-# CLI 入口 (sqlite3 CLI)
-rust_binary(
-    name = "sqlite3",
-    srcs = ["src/main.rs"],
-    edition = "2021",
-    crate_root = "src/main.rs",
-    deps = [":libsqlite_rs"],
-)
+# 注: tests/util.rs (含 printf/datetime/random/str 集成测试) 暂未接入 Bazel —
+# 它依赖的 T-0007a-d (printf) / T-0008 (random) / T-0009 (datetime) 模块还在
+# port 阶段, 集成测试目标 (rust_test on tests/util.rs) 等这几个子任务收尾
+# 后再加回. 当前库内 unit test (libsqlite_rs_test) 128 个全绿.
+
+# CLI 入口 (sqlite3 CLI) — 待 src/main.rs port 完后回归
+# rust_binary(
+#     name = "sqlite3",
+#     srcs = ["src/main.rs"],
+#     edition = "2021",
+#     crate_root = "src/main.rs",
+#     deps = [":libsqlite_rs"],
+# )

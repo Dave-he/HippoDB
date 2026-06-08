@@ -25,9 +25,15 @@ pub use util::pattern::{
 pub use util::utf8::{utf8_char_count, utf8_read, utf8_write};
 pub use util::hash::{str_hash, Hash, GrowableArray};
 pub use util::str::{sqlite3_stricmp, sqlite3_strnicmp};
+pub use util::printf::{printf_int, printf_str, printf_float, printf_sqlite, vprintf_int, vprintf_str, vprintf_float, vprintf_sqlite, FormatSpec, apply_width};
+pub use util::random::{sqlite3_randomness, fill as sqlite3_randomness_fill};
+pub use util::datetime::{DateTime, julian_day, from_julian_day, parse_iso8601, strftime, current_utc, current_time_str, current_date_str, current_timestamp_str};
 
+/// SQLite 版本字符串 (如 "3.54.0"),与官方 libsqlite3 同名常量一致。
 pub const SQLITE_VERSION: &str = env!("SQLITE_VERSION");
+/// SQLite 版本号整数 (3.54.0 = 3_054_000),与官方 libsqlite3 同名常量一致。
 pub const SQLITE_VERSION_NUMBER: i32 = 3_054_000; // 3.54.0 → 3054000
+/// 源码 ID 标识,官方用于"我是哪个 build"的指纹。本仓库 rust port 自定义为 `"rust-port-rust-1.0"`。
 pub const SQLITE_SOURCE_ID: &str = "rust-port-rust-1.0";
 
 /// SQLITE_OK = 0,公共路径上的"无错误"信号。
