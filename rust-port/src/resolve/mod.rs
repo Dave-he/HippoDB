@@ -15,9 +15,32 @@
 //! | `ResolvedColumn`   | `struct Expr` after `addColumn`   |
 
 use crate::error::SqliteError;
-use crate::parse::{ColumnDef, SelectStmt, Stmt, Value};
+use crate::parse::{ColumnDef, SelectStmt, Stmt, Value, WhereExpr, WhereOp};
 use crate::vdbe::{ColumnInfo, Schema, Table};
 use std::collections::HashMap;
+
+/// Public helper: validate that every column reference in `w` exists in
+/// `table_columns`, returning an error for unknown columns. Used by
+/// `where_compiler::run_select` to surface typo errors before evaluation.
+pub fn validate_where_tree(w: &WhereExpr, table_columns: &[String]) -> Result<(), SqliteError> {
+    match w {
+        WhereExpr::Cmp { column, value, .. } => {
+            if !table_columns.iter().any(|c| c == column) {
+                return Err(SqliteError::ERROR
+                    .with_msg(format!("no such column: {column} in WHERE")));
+            }
+            if matches!(value, Value::Identifier(_)) {
+                return Err(SqliteError::ERROR
+                    .with_msg("WHERE with identifier RHS not supported in slim subset".into()));
+            }
+            Ok(())
+        }
+        WhereExpr::And(a, b) | WhereExpr::Or(a, b) => {
+            validate_where_tree(a, table_columns)?;
+            validate_where_tree(b, table_columns)
+        }
+    }
+}
 
 /// A fully resolved SELECT — columns are bound by index, table
 /// reference is verified.
@@ -27,16 +50,64 @@ pub struct ResolvedSelect {
     /// Each entry is `(column_name, source_index_in_table)`. Empty
     /// means "all columns in order" (SELECT *).
     pub columns: Vec<ResolvedColumn>,
-    /// Optional WHERE clause as the original parse Expr — T-0019
-    /// doesn't re-parse, just validates column references in it.
-    pub where_clause: Option<Value>,
-    pub where_column: Option<String>,
+    /// Validated WHERE clause preserving op + AND/OR structure. None
+    /// when the original SELECT has no WHERE.
+    pub where_clause: Option<ResolvedWhereExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedColumn {
     pub name: String,
     pub source_index: usize,
+}
+
+/// WHERE expression with column names validated against the table.
+/// Same shape as `parse::WhereExpr`; we re-export it under a new name
+/// so resolve-layer callers don't need to import parse directly.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolvedWhereExpr {
+    Cmp {
+        op: WhereOp,
+        column: String,
+        value: Value,
+    },
+    And(Box<ResolvedWhereExpr>, Box<ResolvedWhereExpr>),
+    Or(Box<ResolvedWhereExpr>, Box<ResolvedWhereExpr>),
+}
+
+fn resolve_where(
+    expr: &WhereExpr,
+    table_columns: &[String],
+) -> Result<ResolvedWhereExpr, SqliteError> {
+    match expr {
+        WhereExpr::Cmp { op, column, value } => {
+            if !table_columns.iter().any(|c| c == column) {
+                return Err(SqliteError::ERROR.with_msg(format!(
+                    "no such column: {column} in WHERE"
+                )));
+            }
+            // slim subset: reject Identifier RHS (column-to-column compares
+            // would need an EvalEnv, not yet wired into resolve).
+            if matches!(value, Value::Identifier(_)) {
+                return Err(SqliteError::ERROR.with_msg(
+                    "WHERE with identifier RHS not supported in slim subset".into(),
+                ));
+            }
+            Ok(ResolvedWhereExpr::Cmp {
+                op: *op,
+                column: column.clone(),
+                value: value.clone(),
+            })
+        }
+        WhereExpr::And(a, b) => Ok(ResolvedWhereExpr::And(
+            Box::new(resolve_where(a, table_columns)?),
+            Box::new(resolve_where(b, table_columns)?),
+        )),
+        WhereExpr::Or(a, b) => Ok(ResolvedWhereExpr::Or(
+            Box::new(resolve_where(a, table_columns)?),
+            Box::new(resolve_where(b, table_columns)?),
+        )),
+    }
 }
 
 /// Resolve a single SELECT against the schema.
@@ -78,25 +149,16 @@ pub fn resolve_select(stmt: &SelectStmt, schema: &Schema) -> Result<ResolvedSele
         out
     };
 
-    // Verify WHERE column exists
-    let (where_column, where_value) = match &stmt.where_clause {
-        Some(wc) => {
-            if !table.columns.iter().any(|c| c == &wc.column) {
-                return Err(SqliteError::ERROR.with_msg(format!(
-                    "no such column: {} in WHERE",
-                    wc.column
-                )));
-            }
-            (Some(wc.column.clone()), Some(wc.value.clone()))
-        }
-        None => (None, None),
+    // Validate WHERE (column refs + slim subset restrictions)
+    let where_clause = match &stmt.where_clause {
+        Some(w) => Some(resolve_where(w, &table.columns)?),
+        None => None,
     };
 
     Ok(ResolvedSelect {
         table: stmt.from.clone(),
         columns,
-        where_clause: where_value,
-        where_column,
+        where_clause,
     })
 }
 

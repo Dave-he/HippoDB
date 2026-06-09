@@ -598,8 +598,23 @@ fn parse_sql_eval_where_eq() {
         }
         _ => panic!("expected SELECT"),
     }
-    // Confirm the parser rejects `>` in the slim subset.
-    assert!(libsqlite_rs::parse::parse_sql("SELECT * FROM t WHERE x > 1").is_err());
+    // Confirm the parser accepts `>` and stores the op in the WhereExpr.
+    let gt_stmts = libsqlite_rs::parse::parse_sql("SELECT * FROM t WHERE x > 1")
+        .expect("`>` should parse");
+    match &gt_stmts[0] {
+        libsqlite_rs::parse::Stmt::Select(s) => {
+            let wc = s.where_clause.as_ref().expect("where clause");
+            match wc {
+                libsqlite_rs::parse::WhereExpr::Cmp { op, column, value } => {
+                    assert_eq!(*op, libsqlite_rs::parse::WhereOp::Gt);
+                    assert_eq!(column, "x");
+                    assert_eq!(*value, libsqlite_rs::parse::Value::Integer(1));
+                }
+                _ => panic!("expected Cmp, got {wc:?}"),
+            }
+        }
+        _ => panic!("expected SELECT"),
+    }
 }
 
 // ─── Silence unused imports (Literal, FunctionRegistry) — they're part of
@@ -614,4 +629,105 @@ fn _silence_unused(lit: Literal) -> Literal {
     }
     let _ = _fr;
     lit
+}
+
+// ─── E2E: WHERE operators via run_sql (slim subset) ─────────────────────
+
+fn setup_t_with_int_col() -> libsqlite_rs::Schema {
+    let mut s = libsqlite_rs::Schema::default();
+    libsqlite_rs::run_sql("CREATE TABLE t (x INTEGER)", &mut s).unwrap();
+    s
+}
+
+fn seed_int(schema: &mut libsqlite_rs::Schema, _col: &str, vals: &[i64]) {
+    // Slim parser only supports `INSERT INTO t VALUES (...)` (no column list),
+    // and our test tables are all single-column `t(x INTEGER)`, so the column
+    // arg is unused.
+    for &v in vals {
+        let sql = format!("INSERT INTO t VALUES ({v})");
+        libsqlite_rs::run_sql(&sql, schema).unwrap();
+    }
+}
+
+fn col_int(rows: &[Vec<libsqlite_rs::Mem>], col: usize) -> Vec<i64> {
+    rows.iter()
+        .map(|r| match r[col] {
+            libsqlite_rs::Mem::Integer(i) => i,
+            _ => panic!("expected integer in col {col}"),
+        })
+        .collect()
+}
+
+#[test]
+fn e2e_where_gt() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x > 3", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![4, 5]);
+}
+
+#[test]
+fn e2e_where_lt() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x < 3", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![1, 2]);
+}
+
+#[test]
+fn e2e_where_le_ge() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x >= 4", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![4, 5]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x <= 2", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![1, 2]);
+}
+
+#[test]
+fn e2e_where_ne() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x <> 2", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![1, 3]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x != 1", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![2, 3]);
+}
+
+#[test]
+fn e2e_where_and() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5, 6]);
+    let rows =
+        libsqlite_rs::run_sql("SELECT x FROM t WHERE x > 1 AND x < 5", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![2, 3, 4]);
+}
+
+#[test]
+fn e2e_where_or() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5]);
+    let rows = libsqlite_rs::run_sql("SELECT x FROM t WHERE x < 2 OR x > 4", &mut s).unwrap();
+    assert_eq!(col_int(&rows, 0), vec![1, 5]);
+}
+
+#[test]
+fn e2e_where_and_or_combined() {
+    // (x > 1 AND x < 4) OR (x = 5)  →  {2, 3, 5}
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3, 4, 5, 6]);
+    let rows = libsqlite_rs::run_sql(
+        "SELECT x FROM t WHERE x > 1 AND x < 4 OR x = 5",
+        &mut s,
+    )
+    .unwrap();
+    assert_eq!(col_int(&rows, 0), vec![2, 3, 5]);
+}
+
+#[test]
+fn e2e_where_unknown_column_errors() {
+    let mut s = setup_t_with_int_col();
+    seed_int(&mut s, "x", &[1, 2, 3]);
+    let r = libsqlite_rs::run_sql("SELECT x FROM t WHERE y = 1", &mut s);
+    assert!(r.is_err(), "WHERE referencing unknown column should error");
 }

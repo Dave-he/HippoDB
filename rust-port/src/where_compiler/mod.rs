@@ -13,7 +13,7 @@
 
 use crate::error::SqliteError;
 use crate::expr::{BinaryOp as B, EvalEnv, Expr as E, FunctionRegistry, NullRegistry, SqliteValue, eval as expr_eval};
-use crate::parse::{parse_sql, ColumnDef, InsertStmt, SelectStmt, Stmt, Value};
+use crate::parse::{parse_sql, ColumnDef, InsertStmt, SelectStmt, Stmt, Value, WhereExpr, WhereOp};
 use crate::vdbe::{exec, Mem, Op, Schema, VdbeProgram};
 
 /// Compile a SELECT statement into a VdbeProgram.
@@ -65,81 +65,12 @@ pub fn compile_select(stmt: &SelectStmt, schema: &Schema, reg_base: u32) -> Resu
         });
     }
 
-    // Apply WHERE filter (if any). We use a simple inline evaluator.
-    if let Some(wc) = &stmt.where_clause {
-        // Use a scratch register for the filter result
-        let filter_reg = emit_reg_base + emit_cols.len() as u32;
-        // Inline: column = literal comparison.
-        // For now, only support `col op value` where op is one of =, !=, <, <=, >, >=.
-        let col_idx = table.columns.iter().position(|c| c == &wc.column).ok_or_else(|| {
-            SqliteError::ERROR.with_msg(format!("no such column: {}", wc.column))
-        })?;
-        // Read the column value into a scratch register
-        let col_scratch = filter_reg + 1;
-        ops.push(Op::Column {
-            cursor: cursor_id,
-            column: col_idx as u32,
-            dest: col_scratch,
-        });
-        // Push literal into another scratch register
-        let lit_scratch = filter_reg + 2;
-        match &wc.value {
-            Value::Integer(i) => ops.push(Op::Integer { value: *i, dest: lit_scratch }),
-            Value::Real(f) => ops.push(Op::Real { value: *f, dest: lit_scratch }),
-            Value::String(s) => ops.push(Op::String { value: s.clone(), dest: lit_scratch }),
-            Value::Null => ops.push(Op::Null { dest: lit_scratch }),
-            Value::Identifier(_) => {
-                return Err(SqliteError::ERROR.with_msg(
-                    "WHERE with identifier RHS not supported in slim subset".into(),
-                ));
-            }
-        }
-        // For slim: do the comparison directly with a chain of IfNot -> Goto.
-        // We use a single scratch "matches" register set to 1 then conditionally cleared.
-        // Simpler: emit a single IfNot that jumps past ResultRow when filter is false.
-        // We compare col_scratch and lit_scratch and put 0/1 in filter_reg.
-        // For slim, we hand-roll: emit an evaluation op via Column/copy, but
-        // there's no native comparison op. We use the trick: do comparison in
-        // a small register sequence. The simplest path: implement `<`, `=`, `>`
-        // via a sequence of If/IfNot on the SQL truthiness of the expression
-        // by adding a compare op... but we don't have a Compare opcode.
-        //
-        // Pragmatic approach: encode the comparison inline in the program by
-        // emitting a CallFunc-like opcode that delegates to expr::eval. Since
-        // we don't have a FuncCall opcode either, we use a workaround: load
-        // both values into env, eval outside the program, and **inline the
-        // result** by reading the cursor outside of the Vm loop.
-        //
-        // But that's not how Vdbe works. The real fix: add a Compare op
-        // to Vdbe. We do that by emitting a single Op::IfNot that uses a
-        // precomputed match. For T-0021 slim, the filter is evaluated by a
-        // higher-level wrapper: compile_select returns a program; the
-        // SELECT executor pre-filters rows by evaluating the WHERE with
-        // `expr::eval` against the cursor's current row, and only pushes
-        // a "skip" flag. Since we don't have such a flag, the cleanest
-        // path is: encode the comparison as a sequence of integer comparisons
-        // via a new Op::Compare { left, right, op, dest } opcode.
-        //
-        // For now, encode it as: load col_scratch, load lit_scratch, then
-        // emit an Op::Compare that we add. To keep T-0021 self-contained,
-        // we don't add new opcodes; instead we evaluate the WHERE in the
-        // higher-level executor (see `run_select` below).
-        //
-        // We mark the filter via a sentinel Op::Filter { left: col_scratch, right: lit_scratch, op: wc_op }.
-        // But Vdbe doesn't know Filter. So the pragmatic answer: the e2e test
-        // driver (run_select) handles filtering by pre-evaluating the WHERE
-        // using expr::eval against Mem values it reads from the schema before
-        // emitting ResultRow.
-        //
-        // For T-0021, we delegate the actual comparison to a wrapper that
-        // walks the cursor outside the VM, emitting rows as it goes.
-        // This means compile_select returns a "raw" program that the
-        // caller filters with a Rust-side WHERE check.
-        //
-        // → see `run_select` in this module for the high-level entry point
-        //   that does the full compile + filter + execute.
-        let _ = filter_reg;
-    }
+    // Apply WHERE filter (if any). The slim subset delegates the actual
+    // comparison to the high-level runner (`run_select`), which walks the
+    // WhereExpr tree and uses `expr::eval` against each row's Mem. So at the
+    // Vm level we just emit an unconditional ResultRow for every cursor row;
+    // the filter happens outside the Vm.
+    let _ = &stmt.where_clause;
 
     // ResultRow
     ops.push(Op::ResultRow {
@@ -236,9 +167,18 @@ pub fn compile_stmt(stmt: &Stmt, schema: &Schema) -> Result<VdbeProgram, SqliteE
 
 // ─── High-level runner: applies WHERE filter via expr::eval ──────────────
 
-/// Run a single SELECT, applying the WHERE filter with the expression
-/// evaluator against each row.
+/// Run a single SELECT, applying the WHERE filter (a `WhereExpr` tree of
+/// comparisons + AND/OR) via `expr::eval` against each row's Mem.
 pub fn run_select(stmt: &SelectStmt, schema: &mut Schema) -> Result<Vec<Vec<Mem>>, SqliteError> {
+    // Validate WHERE column references first (mirrors resolve_where in the
+    // resolve layer). This catches typos like `WHERE y = 1` against a table
+    // that only has `x`, instead of silently returning NULL.
+    if let Some(w) = &stmt.where_clause {
+        if let Some(table) = schema.tables.get(&stmt.from) {
+            crate::resolve::validate_where_tree(w, &table.columns)?;
+        }
+    }
+
     // Compile and execute the raw program to get all rows (no filter applied in Vm).
     let prog = compile_select(stmt, schema, 0)?;
     let raw_rows = exec(&prog, schema)?;
@@ -247,52 +187,65 @@ pub fn run_select(stmt: &SelectStmt, schema: &mut Schema) -> Result<Vec<Vec<Mem>
         return Ok(raw_rows.into_iter().map(|r| r.0).collect());
     }
 
-    // Filter: for each row, build RowEnv and eval the WHERE.
-    let wc = stmt.where_clause.as_ref().unwrap();
-    let table = schema.tables.get(&stmt.from).unwrap();
-    let col_idx = table
-        .columns
-        .iter()
-        .position(|c| c == &wc.column)
-        .ok_or_else(|| SqliteError::ERROR.with_msg(format!("no such column: {}", wc.column)))?;
+    // Pre-collect table info before the borrow on raw_rows.
+    let table_columns: Vec<String> = schema
+        .tables
+        .get(&stmt.from)
+        .map(|t| t.columns.clone())
+        .unwrap_or_default();
 
-    // Build a hand-rolled EvalEnv that takes the row's Mem for the column.
-    // We construct a simple Expr: Binary{op, col_ref, literal}
-    // and eval it. For the slim scope, this only handles =, <, >, <=, >=, !=.
-    let bin_op = where_op_to_binaryop(&wc.value);
-    let literal = value_to_sqlitevalue(&wc.value);
-    let col_ref = E::ColumnRef(wc.column.clone());
+    let where_expr = stmt.where_clause.as_ref().unwrap();
 
     let mut out = Vec::new();
     for row in raw_rows {
-        let env = SimpleMemEnv { col_name: wc.column.clone(), col_idx, all_cols: &table.columns, row: &row.0 };
-        // Build the comparison Expr dynamically
-        let cmp_expr = E::Binary {
-            op: bin_op,
-            left: Box::new(col_ref.clone()),
-            right: Box::new(literal.clone()),
+        let env = SimpleMemEnv {
+            all_cols: &table_columns,
+            row: &row.0,
         };
-        let v = expr_eval(&cmp_expr, &env)?;
-        // Pass iff the comparison yields truthy
+        let v = expr_eval(&where_expr_to_expr(where_expr), &env)?;
+        // SQL truthiness: Integer(1) → keep; Null → exclude (NULL WHERE);
+        // Integer(0) or anything else → exclude.
         if matches!(v, SqliteValue::Integer(1)) {
             out.push(row.0);
-        } else if matches!(v, SqliteValue::Null) {
-            // SQL: NULL WHERE → row excluded
-            continue;
         }
-        // Integer(0) → row excluded
     }
     Ok(out)
 }
 
-fn where_op_to_binaryop(_val: &Value) -> B {
-    // The slim parser only supports = in WHERE (the existing parse::parse_select
-    // has WhereClause { column, value } with implicit =). For broader support
-    // we'd need to extend WhereClause to carry an explicit op. For now, =.
-    B::Eq
+/// Convert a parsed `WhereExpr` (slim: cmp/AND/OR over a single literal
+/// RHS) into the generic `expr::Expr` AST that `expr::eval` consumes.
+fn where_expr_to_expr(w: &WhereExpr) -> E {
+    match w {
+        WhereExpr::Cmp { op, column, value } => E::Binary {
+            op: where_op_to_binaryop(*op),
+            left: Box::new(E::ColumnRef(column.clone())),
+            right: Box::new(value_to_expr(value)),
+        },
+        WhereExpr::And(a, b) => E::Binary {
+            op: B::And,
+            left: Box::new(where_expr_to_expr(a)),
+            right: Box::new(where_expr_to_expr(b)),
+        },
+        WhereExpr::Or(a, b) => E::Binary {
+            op: B::Or,
+            left: Box::new(where_expr_to_expr(a)),
+            right: Box::new(where_expr_to_expr(b)),
+        },
+    }
 }
 
-fn value_to_sqlitevalue(v: &Value) -> E {
+fn where_op_to_binaryop(op: WhereOp) -> B {
+    match op {
+        WhereOp::Eq => B::Eq,
+        WhereOp::Ne => B::Ne,
+        WhereOp::Lt => B::Lt,
+        WhereOp::Le => B::Le,
+        WhereOp::Gt => B::Gt,
+        WhereOp::Ge => B::Ge,
+    }
+}
+
+fn value_to_expr(v: &Value) -> E {
     match v {
         Value::Integer(i) => E::Literal(crate::expr::Literal::Integer(*i)),
         Value::Real(f) => E::Literal(crate::expr::Literal::Real(*f)),
@@ -304,17 +257,13 @@ fn value_to_sqlitevalue(v: &Value) -> E {
 
 /// EvalEnv backed by a single row of Mem.
 struct SimpleMemEnv<'a> {
-    col_name: String,
-    col_idx: usize,
     all_cols: &'a [String],
     row: &'a [Mem],
 }
 
 impl<'a> EvalEnv for SimpleMemEnv<'a> {
     fn lookup(&self, name: &str) -> SqliteValue {
-        if name == self.col_name {
-            mem_to_sqlitevalue(&self.row[self.col_idx])
-        } else if let Some(i) = self.all_cols.iter().position(|c| c == name) {
+        if let Some(i) = self.all_cols.iter().position(|c| c == name) {
             if i < self.row.len() {
                 mem_to_sqlitevalue(&self.row[i])
             } else {

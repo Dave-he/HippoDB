@@ -51,15 +51,35 @@ pub struct SelectStmt {
     pub columns: Vec<String>,
     /// The table to select from.
     pub from: String,
-    /// Optional WHERE clause (only simple column = literal supported).
-    pub where_clause: Option<WhereClause>,
+    /// Optional WHERE clause. Slim subset: comparison + AND/OR combinations.
+    pub where_clause: Option<WhereExpr>,
 }
 
-/// A simple WHERE clause: `col = literal`.
+/// Comparison operator in a WHERE clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WhereOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+/// A simple WHERE expression: a single `col op literal` comparison, or
+/// a boolean combination (AND/OR) of two sub-expressions.
 #[derive(Debug, Clone, PartialEq)]
-pub struct WhereClause {
-    pub column: String,
-    pub value: Value,
+pub enum WhereExpr {
+    /// `column op value` — slim subset supports integer/real/string/null RHS.
+    Cmp {
+        op: WhereOp,
+        column: String,
+        value: Value,
+    },
+    /// `a AND b`
+    And(Box<WhereExpr>, Box<WhereExpr>),
+    /// `a OR b`
+    Or(Box<WhereExpr>, Box<WhereExpr>),
 }
 
 /// `INSERT INTO table VALUES (val [, val]*)`
@@ -164,15 +184,61 @@ impl<'a> Parser<'a> {
         }
         self.expect_keyword(Keyword::From)?;
         let from = self.parse_identifier()?;
-        let mut where_clause = None;
-        if self.is_keyword(Keyword::Where) {
+        let where_clause = if self.is_keyword(Keyword::Where) {
             self.advance();
-            let col = self.parse_identifier()?;
-            self.expect_punct(Punct::Eq)?;
-            let val = self.parse_value()?;
-            where_clause = Some(WhereClause { column: col, value: val });
+            Some(self.parse_where_expr()?)
+        } else {
+            None
+        };
+        Ok(SelectStmt {
+            all,
+            columns,
+            from,
+            where_clause,
+        })
+    }
+
+    /// Parse a WHERE expression: `cmp (AND cmp)* (OR cmp (AND cmp)*)*`
+    /// with left-to-right evaluation (slim subset — no precedence climbing).
+    fn parse_where_expr(&mut self) -> Result<WhereExpr, SqliteError> {
+        let mut left = self.parse_where_and()?;
+        while self.is_keyword(Keyword::Or) {
+            self.advance();
+            let right = self.parse_where_and()?;
+            left = WhereExpr::Or(Box::new(left), Box::new(right));
         }
-        Ok(SelectStmt { all, columns, from, where_clause })
+        Ok(left)
+    }
+
+    fn parse_where_and(&mut self) -> Result<WhereExpr, SqliteError> {
+        let mut left = self.parse_where_cmp()?;
+        while self.is_keyword(Keyword::And) {
+            self.advance();
+            let right = self.parse_where_cmp()?;
+            left = WhereExpr::And(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_where_cmp(&mut self) -> Result<WhereExpr, SqliteError> {
+        let column = self.parse_identifier()?;
+        let op = self.parse_where_op()?;
+        let value = self.parse_value()?;
+        Ok(WhereExpr::Cmp { op, column, value })
+    }
+
+    fn parse_where_op(&mut self) -> Result<WhereOp, SqliteError> {
+        let op = match self.peek().kind {
+            TokenKind::Punct(Punct::Eq) => WhereOp::Eq,
+            TokenKind::Punct(Punct::Ne) => WhereOp::Ne,
+            TokenKind::Punct(Punct::Lt) => WhereOp::Lt,
+            TokenKind::Punct(Punct::Le) => WhereOp::Le,
+            TokenKind::Punct(Punct::Gt) => WhereOp::Gt,
+            TokenKind::Punct(Punct::Ge) => WhereOp::Ge,
+            _ => return Err(SqliteError(1)),
+        };
+        self.advance();
+        Ok(op)
     }
 
     fn parse_insert(&mut self) -> Result<InsertStmt, SqliteError> {
@@ -393,8 +459,14 @@ mod tests {
             Stmt::Select(s) => {
                 assert_eq!(s.from, "users");
                 let wc = s.where_clause.as_ref().unwrap();
-                assert_eq!(wc.column, "id");
-                assert_eq!(wc.value, Value::Integer(42));
+                assert_eq!(
+                    *wc,
+                    WhereExpr::Cmp {
+                        op: WhereOp::Eq,
+                        column: "id".to_string(),
+                        value: Value::Integer(42),
+                    }
+                );
             }
             _ => panic!("expected SELECT"),
         }
@@ -406,7 +478,81 @@ mod tests {
         match &stmts[0] {
             Stmt::Select(s) => {
                 let wc = s.where_clause.as_ref().unwrap();
-                assert_eq!(wc.value, Value::String("alice".to_string()));
+                assert_eq!(
+                    *wc,
+                    WhereExpr::Cmp {
+                        op: WhereOp::Eq,
+                        column: "name".to_string(),
+                        value: Value::String("alice".to_string()),
+                    }
+                );
+            }
+            _ => panic!("expected SELECT"),
+        }
+    }
+
+    #[test]
+    fn select_where_gt() {
+        let stmts = parse("SELECT * FROM t WHERE x > 1");
+        match &stmts[0] {
+            Stmt::Select(s) => {
+                let wc = s.where_clause.as_ref().unwrap();
+                assert_eq!(
+                    *wc,
+                    WhereExpr::Cmp {
+                        op: WhereOp::Gt,
+                        column: "x".to_string(),
+                        value: Value::Integer(1),
+                    }
+                );
+            }
+            _ => panic!("expected SELECT"),
+        }
+    }
+
+    #[test]
+    fn select_where_le_ne() {
+        let stmts = parse("SELECT * FROM t WHERE y <= 10 AND z <> 0");
+        match &stmts[0] {
+            Stmt::Select(s) => {
+                let wc = s.where_clause.as_ref().unwrap();
+                let expected = WhereExpr::And(
+                    Box::new(WhereExpr::Cmp {
+                        op: WhereOp::Le,
+                        column: "y".to_string(),
+                        value: Value::Integer(10),
+                    }),
+                    Box::new(WhereExpr::Cmp {
+                        op: WhereOp::Ne,
+                        column: "z".to_string(),
+                        value: Value::Integer(0),
+                    }),
+                );
+                assert_eq!(*wc, expected);
+            }
+            _ => panic!("expected SELECT"),
+        }
+    }
+
+    #[test]
+    fn select_where_or() {
+        let stmts = parse("SELECT * FROM t WHERE a = 1 OR b = 2");
+        match &stmts[0] {
+            Stmt::Select(s) => {
+                let wc = s.where_clause.as_ref().unwrap();
+                let expected = WhereExpr::Or(
+                    Box::new(WhereExpr::Cmp {
+                        op: WhereOp::Eq,
+                        column: "a".to_string(),
+                        value: Value::Integer(1),
+                    }),
+                    Box::new(WhereExpr::Cmp {
+                        op: WhereOp::Eq,
+                        column: "b".to_string(),
+                        value: Value::Integer(2),
+                    }),
+                );
+                assert_eq!(*wc, expected);
             }
             _ => panic!("expected SELECT"),
         }
@@ -468,7 +614,14 @@ mod tests {
         match &stmts[0] {
             Stmt::Select(s) => {
                 let wc = s.where_clause.as_ref().unwrap();
-                assert_eq!(wc.value, Value::Null);
+                assert_eq!(
+                    *wc,
+                    WhereExpr::Cmp {
+                        op: WhereOp::Eq,
+                        column: "x".to_string(),
+                        value: Value::Null,
+                    }
+                );
             }
             _ => panic!("expected SELECT"),
         }
