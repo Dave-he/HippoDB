@@ -83,6 +83,29 @@ impl SqliteError {
         self.0
     }
 
+    /// 返回错误码对应的默认错误消息字符串。
+    pub const fn message(self) -> &'static str {
+        match self.0 {
+            0 => "not an error",
+            1 => "SQL logic error",
+            2 => "internal error",
+            3 => "permission denied",
+            4 => "callback requested query abort",
+            5 => "database is locked",
+            7 => "out of memory",
+            10 => "disk I/O error",
+            11 => "database disk image is malformed",
+            12 => "table or record not found",
+            13 => "database is full",
+            14 => "unable to open database file",
+            19 => "constraint failed",
+            20 => "datatype mismatch",
+            21 => "bad parameter or other API misuse",
+            22 => "large file support is disabled",
+            _ => "unknown error",
+        }
+    }
+
     /// true 当且仅当为 SQLITE_OK(0)。
     #[inline]
     pub const fn is_ok(self) -> bool {

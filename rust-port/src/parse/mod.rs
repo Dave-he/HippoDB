@@ -124,7 +124,7 @@ pub enum Value {
 /// The SQL Parser.
 pub struct Parser<'a> {
     tokens: &'a [Token],
-    pos: usize,
+    pub pos: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -148,6 +148,17 @@ impl<'a> Parser<'a> {
             self.skip_optional_semi();
         }
         Ok(stmts)
+    }
+
+    /// Parse a single statement from the token stream.
+    pub fn parse_stmt(&mut self) -> Result<Stmt, SqliteError> {
+        self.skip_optional_semi();
+        if self.pos >= self.tokens.len() {
+            return Ok(Stmt::Empty);
+        }
+        let stmt = self.parse_one_stmt()?;
+        self.skip_optional_semi();
+        Ok(stmt)
     }
 
     /// Parse a single statement.
@@ -389,6 +400,7 @@ impl<'a> Parser<'a> {
                 text: String::new(),
                 line: 0,
                 col: 0,
+                offset: 0,
             };
             &EOF
         } else {

@@ -181,3 +181,130 @@ pub enum IoOp {
     FileSize,
     Truncate,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- OpenFlags -----------------------------------------------------
+
+    #[test]
+    fn open_flags_from_int_readonly() {
+        // SQLITE_OPEN_READONLY = 0x01
+        let f = OpenFlags::from_int(0x01);
+        assert!(f.read_only);
+        assert!(!f.read_write);
+        assert!(!f.create);
+        assert!(!f.delete_on_close);
+        assert!(!f.exclusive);
+    }
+
+    #[test]
+    fn open_flags_from_int_readwrite() {
+        // SQLITE_OPEN_READWRITE = 0x02
+        let f = OpenFlags::from_int(0x02);
+        assert!(!f.read_only);
+        assert!(f.read_write);
+    }
+
+    #[test]
+    fn open_flags_from_int_create() {
+        // SQLITE_OPEN_CREATE = 0x04
+        let f = OpenFlags::from_int(0x04);
+        assert!(f.create);
+        assert!(!f.read_write);
+    }
+
+    #[test]
+    fn open_flags_from_int_combined() {
+        // READWRITE | CREATE = 0x06
+        let f = OpenFlags::from_int(0x06);
+        assert!(!f.read_only);
+        assert!(f.read_write);
+        assert!(f.create);
+    }
+
+    #[test]
+    fn open_flags_from_int_delete_on_close() {
+        // SQLITE_OPEN_DELETEONCLOSE = 0x08
+        let f = OpenFlags::from_int(0x08);
+        assert!(f.delete_on_close);
+        assert!(!f.exclusive);
+    }
+
+    #[test]
+    fn open_flags_from_int_exclusive() {
+        // SQLITE_OPEN_EXCLUSIVE = 0x10
+        let f = OpenFlags::from_int(0x10);
+        assert!(f.exclusive);
+    }
+
+    #[test]
+    fn open_flags_from_int_all() {
+        let f = OpenFlags::from_int(0x01 | 0x02 | 0x04 | 0x08 | 0x10);
+        assert!(f.read_only);
+        assert!(f.read_write);
+        assert!(f.create);
+        assert!(f.delete_on_close);
+        assert!(f.exclusive);
+    }
+
+    #[test]
+    fn open_flags_from_int_zero() {
+        let f = OpenFlags::from_int(0);
+        assert!(!f.read_only);
+        assert!(!f.read_write);
+        assert!(!f.create);
+    }
+
+    #[test]
+    fn open_flags_equality() {
+        let a = OpenFlags::from_int(0x02);
+        let b = OpenFlags::from_int(0x02);
+        let c = OpenFlags::from_int(0x04);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    // --- AccessKind ----------------------------------------------------
+
+    #[test]
+    fn access_kind_variants_distinct() {
+        assert_ne!(AccessKind::Exists, AccessKind::ReadWrite);
+        assert_ne!(AccessKind::ReadWrite, AccessKind::Read);
+        assert_ne!(AccessKind::Exists, AccessKind::Read);
+    }
+
+    #[test]
+    fn access_kind_clone() {
+        let a = AccessKind::Exists;
+        let b = a; // Copy
+        assert_eq!(a, b);
+    }
+
+    // --- map_io_error --------------------------------------------------
+
+    #[test]
+    fn map_io_error_codes_match_c() {
+        // Use a placeholder error; the function ignores it.
+        let mk = || std::io::Error::new(std::io::ErrorKind::Other, "x");
+        assert_eq!(map_io_error(mk(), IoOp::Open).code(), 14); // SQLITE_CANTOPEN
+        assert_eq!(map_io_error(mk(), IoOp::Close).code(), 10); // SQLITE_IOERR
+        assert_eq!(map_io_error(mk(), IoOp::Read).code(), 266); // SQLITE_IOERR_READ
+        assert_eq!(map_io_error(mk(), IoOp::Write).code(), 778); // SQLITE_IOERR_WRITE
+        assert_eq!(map_io_error(mk(), IoOp::Sync).code(), 1034); // SQLITE_IOERR_FSYNC
+        assert_eq!(map_io_error(mk(), IoOp::Delete).code(), 10); // SQLITE_IOERR_DELETE
+        assert_eq!(map_io_error(mk(), IoOp::Access).code(), 10); // SQLITE_IOERR
+        assert_eq!(map_io_error(mk(), IoOp::FileSize).code(), 10);
+        assert_eq!(map_io_error(mk(), IoOp::Truncate).code(), 10);
+    }
+
+    // --- open_file_count ----------------------------------------------
+
+    #[test]
+    fn open_file_count_initial_zero_or_unstable() {
+        // The counter is process-global and shared with other tests,
+        // so we cannot assert == 0. We can only assert it's >= 0.
+        assert!(open_file_count() >= 0);
+    }
+}

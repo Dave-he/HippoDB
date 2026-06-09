@@ -122,14 +122,15 @@ impl<'a> BtreeCursor<'a> {
                 self.cell_count = read_u16(&page, 3);
                 return Ok(());
             } else if ptype == PTYPE_INTERIOR_TABLE {
-                // Read the first cell pointer to get the leftmost
-                // child. The right-child pointer (after the header)
-                // is the rightmost child.
-                let header_size = 12; // 8 + 4 for right-child
-                let first_ptr = read_u16(&page, 8);
-                // For interior pages, cells start at offset 12
-                // (after the right-child pointer).
-                let _ = header_size;
+                // Interior page layout:
+                //   offset 0..8:  page header (same as leaf)
+                //   offset 8..12: 4-byte right-child pointer
+                //     (the page number of the right-most child; we
+                //     don't follow it in the slim subset)
+                //   offset 12..:  cell pointer array (2 bytes each)
+                // The leftmost child is at the offset stored in the
+                // FIRST cell pointer, so we read at offset 12.
+                let first_ptr = read_u16(&page, 12);
                 if first_ptr == 0 {
                     return Err(SqliteError(11)); // SQLITE_CORRUPT
                 }
@@ -416,5 +417,132 @@ mod tests {
         let cur = btree.cursor().unwrap();
         // Cursor should be exhausted immediately.
         assert!(cur.is_eof());
+    }
+
+    #[test]
+    fn read_header_returns_db_header() {
+        // Build a database whose first 100 bytes are non-zero, so we
+        // can verify read_header returns them.
+        let path = make_db("header", 1);
+        let mut data = fs::read(&path).unwrap();
+        for (i, b) in data.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(37);
+        }
+        fs::write(&path, &data).unwrap();
+        let vfs = UnixVfs::new();
+        let pager = Pager::open(&vfs, &path, 4096, 100).unwrap();
+        let mut btree = Btree::open(pager, 1);
+        let mut out = [0u8; 16];
+        btree.read_header(16, &mut out).unwrap();
+        for (i, b) in out.iter().enumerate() {
+            assert_eq!(*b, (i as u8).wrapping_mul(37), "byte {i}");
+        }
+    }
+
+    #[test]
+    fn read_header_zero_bytes() {
+        // Reading 0 bytes is allowed and a no-op.
+        let path = make_db("hdr_zero", 1);
+        let vfs = UnixVfs::new();
+        let pager = Pager::open(&vfs, &path, 4096, 100).unwrap();
+        let mut btree = Btree::open(pager, 1);
+        let mut out = [0u8; 8];
+        btree.read_header(0, &mut out).unwrap();
+        // out untouched
+        for b in &out {
+            assert_eq!(*b, 0);
+        }
+    }
+
+    #[test]
+    fn interior_page_follows_to_leftmost_child() {
+        // Build a 2-page database:
+        //   page 1: interior table page pointing to page 2 (leftmost child)
+        //   page 2: leaf table with 3 cells
+        // (The slim-subset btree reads the page header at offset 0 of
+        // the page data — there's no 100-byte DB header for our test
+        // databases.)
+        let path = make_db("interior", 2);
+        let page_size = 4096;
+
+        // Build page 2 (leaf with 3 cells).
+        let leaf = build_leaf_page(3);
+
+        // Build page 1 (interior with 1 cell pointing to page 2).
+        let mut interior = vec![0u8; page_size];
+        interior[0] = PTYPE_INTERIOR_TABLE; // page type at offset 0
+        // 8-byte B-Tree page header at offset 0..8
+        //   - ptype at 0
+        //   - freeblock at 1..2 (0 = none)
+        //   - cell count at 3..4
+        //   - cell content start at 5..6
+        //   - fragmented at 7
+        interior[3] = 0;
+        interior[4] = 1; // 1 cell
+        // 4-byte right-child pointer at 8..12 (we set 0; slim subset
+        // doesn't follow it).
+        // Cell pointers start at offset 12.
+        // Cell 0 pointer at 12..14.
+        // Cell content starts at 14.
+        let cell_offset: u16 = 14;
+        interior[12] = (cell_offset >> 8) as u8;
+        interior[13] = (cell_offset & 0xff) as u8;
+        // Interior cell: 4-byte child page number + varint rowid.
+        interior[14] = 0;
+        interior[15] = 0;
+        interior[16] = 0;
+        interior[17] = 2; // child = page 2
+        interior[18] = 100; // varint rowid = 100
+
+        // Assemble the 2-page file: page 1 (file offset 0..4096) +
+        // page 2 (file offset 4096..8192).
+        let mut file = vec![0u8; 2 * page_size];
+        file[..page_size].copy_from_slice(&interior);
+        file[page_size..].copy_from_slice(&leaf);
+        fs::write(&path, &file).unwrap();
+
+        let vfs = UnixVfs::new();
+        let pager = Pager::open(&vfs, &path, 4096, 100).unwrap();
+        let mut btree = Btree::open(pager, 1);
+        let mut cur = btree.cursor().unwrap();
+        // The cursor should have followed the leftmost-child pointer
+        // and landed on the first cell of the leaf.
+        assert_eq!(cur.rowid(), 1);
+        assert_eq!(cur.payload(), b"row_0");
+    }
+
+    #[test]
+    fn interior_page_corrupt_returns_error() {
+        // Page 1 is interior but its first cell pointer is 0 → CORRUPT.
+        let path = make_db("corrupt", 1);
+        let page_size = 4096;
+        let mut page = vec![0u8; page_size];
+        page[0] = PTYPE_INTERIOR_TABLE; // page type at offset 0
+        // cell count = 1 so the loader tries to read the first pointer
+        // (which is 0 → CORRUPT).
+        page[4] = 1;
+        fs::write(&path, &page).unwrap();
+        let vfs = UnixVfs::new();
+        let pager = Pager::open(&vfs, &path, 4096, 100).unwrap();
+        let mut btree = Btree::open(pager, 1);
+        let r = btree.cursor();
+        assert!(r.is_err());
+        assert_eq!(r.err().unwrap().code(), 11); // SQLITE_CORRUPT
+    }
+
+    #[test]
+    fn interior_page_unknown_ptype_errors() {
+        // Page 1 has an unknown page type byte → CORRUPT.
+        let path = make_db("bad_ptype", 1);
+        let page_size = 4096;
+        let mut page = vec![0u8; page_size];
+        page[0] = 0xFF; // unknown page type
+        fs::write(&path, &page).unwrap();
+        let vfs = UnixVfs::new();
+        let pager = Pager::open(&vfs, &path, 4096, 100).unwrap();
+        let mut btree = Btree::open(pager, 1);
+        let r = btree.cursor();
+        assert!(r.is_err());
+        assert_eq!(r.err().unwrap().code(), 11); // SQLITE_CORRUPT
     }
 }

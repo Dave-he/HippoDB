@@ -175,16 +175,19 @@ pub struct Token {
     pub line: u32,
     /// Column number (0-based) within the line.
     pub col: u32,
+    /// Byte offset in the input SQL string.
+    pub offset: usize,
 }
 
 impl Token {
     /// Construct a token.
-    pub fn new(kind: TokenKind, text: impl Into<String>, line: u32, col: u32) -> Self {
+    pub fn new(kind: TokenKind, text: impl Into<String>, line: u32, col: u32, offset: usize) -> Self {
         Token {
             kind,
             text: text.into(),
             line,
             col,
+            offset,
         }
     }
 }
@@ -240,6 +243,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
             }
             continue;
         }
+
+        // We have skipped whitespace and comments. The token starts at `i`.
+        let token_offset = i;
+
         // String literal
         if c == b'\'' {
             let start_line = line;
@@ -274,7 +281,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
             let body = &input[text_start..i];
             i += 1; // skip closing quote
             col += (i - text_start) as u32 + 1;
-            tokens.push(Token::new(TokenKind::String, body, start_line, start_col));
+            tokens.push(Token::new(TokenKind::String, body, start_line, start_col, token_offset));
             continue;
         }
         // Blob literal
@@ -296,7 +303,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
             let body = &input[text_start..i];
             i += 1;
             col += (i - text_start) as u32 + 1;
-            tokens.push(Token::new(TokenKind::Blob, body, start_line, start_col));
+            tokens.push(Token::new(TokenKind::Blob, body, start_line, start_col, token_offset));
             continue;
         }
         // Identifier or keyword
@@ -318,7 +325,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
             } else {
                 TokenKind::Keyword(kw)
             };
-            tokens.push(Token::new(kind, text, start_line, start_col));
+            tokens.push(Token::new(kind, text, start_line, start_col, token_offset));
             continue;
         }
         // Number
@@ -359,7 +366,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
             } else {
                 TokenKind::Integer
             };
-            tokens.push(Token::new(kind, text, start_line, start_col));
+            tokens.push(Token::new(kind, text, start_line, start_col, token_offset));
             continue;
         }
         // Variable
@@ -394,7 +401,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
                 }
             }
             let text = &input[start..i];
-            tokens.push(Token::new(TokenKind::Variable, text, start_line, start_col));
+            tokens.push(Token::new(TokenKind::Variable, text, start_line, start_col, token_offset));
             continue;
         }
         // Punctuation (multi-character operators first).
@@ -405,7 +412,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, SqliteError> {
         match punct {
             Some(p) => {
                 let text = input.get(text_start..i).unwrap_or("").to_string();
-                tokens.push(Token::new(TokenKind::Punct(p), text, start_line, start_col));
+                tokens.push(Token::new(TokenKind::Punct(p), text, start_line, start_col, token_offset));
             }
             None => {
                 return Err(SqliteError(1));

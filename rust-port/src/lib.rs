@@ -28,7 +28,11 @@ pub mod where_compiler;
 pub use api::{
     sqlite3_close, sqlite3_errcode, sqlite3_errmsg, sqlite3_libversion,
     sqlite3_libversion_number, sqlite3_malloc, sqlite3_malloc64, sqlite3_free, sqlite3_open,
-    sqlite3_open_v2,
+    sqlite3_open_v2, sqlite3_prepare_v2, sqlite3_step, sqlite3_finalize,
+    sqlite3_column_count, sqlite3_column_name, sqlite3_column_type,
+    sqlite3_column_int, sqlite3_column_int64, sqlite3_column_double,
+    sqlite3_column_text, sqlite3_column_blob, sqlite3_column_bytes,
+    sqlite3_exec,
 };
 pub use error::SqliteError;
 pub use expr::{
@@ -36,7 +40,7 @@ pub use expr::{
     UnaryOp, eval, eval_glob, eval_like,
 };
 pub use func::BuiltinRegistry;
-pub use handle::SqliteDb;
+pub use handle::{SqliteDb, SqliteStmt};
 pub use resolve::{ResolvedSelect, ResolvedStmt, resolve, resolve_select};
 pub use vdbe::{ColumnInfo, Mem, Op, Row, Schema, Table, VdbeProgram, exec};
 pub use where_compiler::{compile_create, compile_drop, compile_insert, compile_select, compile_stmt, run_select, run_sql};

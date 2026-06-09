@@ -9,7 +9,10 @@ publish = false
 
 [lib]
 name = "libsqlite_rs"
-crate-type = ["rlib"]
+# rlib is the canonical Rust library form; cdylib exposes the C ABI
+# (#[no_mangle] pub unsafe extern "C" symbols) as a shared object that
+# can be dlopen'd as a drop-in for libsqlite3.
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
