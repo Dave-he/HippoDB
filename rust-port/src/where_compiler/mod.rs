@@ -179,11 +179,18 @@ pub fn run_select(stmt: &SelectStmt, schema: &mut Schema) -> Result<Vec<Vec<Mem>
         }
     }
 
-    // Compile and execute the raw program to get all rows (no filter applied in Vm).
-    let prog = compile_select(stmt, schema, 0)?;
-    let raw_rows = exec(&prog, schema)?;
-
+    // Compile and execute the raw program to get all rows.
+    //
+    // When a WHERE clause is present we must filter against the FULL table
+    // row (all columns), because the predicate may reference a column that
+    // is not in the projection (e.g. `SELECT name ... WHERE id > 1`). If we
+    // projected first, the filter's column indices (resolved against the
+    // table schema) would point past the end of the projected row and the
+    // predicate would silently match nothing. So: fetch all columns, filter,
+    // then project down to the requested columns.
     if stmt.where_clause.is_none() {
+        let prog = compile_select(stmt, schema, 0)?;
+        let raw_rows = exec(&prog, schema)?;
         return Ok(raw_rows.into_iter().map(|r| r.0).collect());
     }
 
@@ -193,6 +200,27 @@ pub fn run_select(stmt: &SelectStmt, schema: &mut Schema) -> Result<Vec<Vec<Mem>
         .get(&stmt.from)
         .map(|t| t.columns.clone())
         .unwrap_or_default();
+
+    // Projection: which table-column indices does the SELECT list request?
+    let proj_idx: Vec<usize> = if stmt.all {
+        (0..table_columns.len()).collect()
+    } else {
+        stmt.columns
+            .iter()
+            .map(|c| table_columns.iter().position(|tc| tc == c))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| SqliteError::ERROR.with_msg("no such column in projection".to_string()))?
+    };
+
+    // Fetch FULL rows (all columns) for correct WHERE evaluation.
+    let full_stmt = SelectStmt {
+        all: true,
+        columns: Vec::new(),
+        from: stmt.from.clone(),
+        where_clause: None,
+    };
+    let prog = compile_select(&full_stmt, schema, 0)?;
+    let raw_rows = exec(&prog, schema)?;
 
     let where_expr = stmt.where_clause.as_ref().unwrap();
 
@@ -206,7 +234,9 @@ pub fn run_select(stmt: &SelectStmt, schema: &mut Schema) -> Result<Vec<Vec<Mem>
         // SQL truthiness: Integer(1) → keep; Null → exclude (NULL WHERE);
         // Integer(0) or anything else → exclude.
         if matches!(v, SqliteValue::Integer(1)) {
-            out.push(row.0);
+            // Project the surviving full row down to the requested columns.
+            let projected: Vec<Mem> = proj_idx.iter().map(|&i| row.0[i].clone()).collect();
+            out.push(projected);
         }
     }
     Ok(out)

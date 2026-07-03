@@ -409,6 +409,36 @@ fn run_sql_select_with_where_runs_e2e() {
 }
 
 #[test]
+fn run_sql_select_projected_col_differs_from_where_col() {
+    // Regression: `SELECT <col> WHERE <other_col> ...` used to return 0 rows
+    // because the WHERE predicate was evaluated against the already-projected
+    // row (which no longer contained the filter column), so the column index
+    // pointed past the row's end. The filter must run against the full table
+    // row, then project.
+    use libsqlite_rs::run_sql;
+    let mut s = Schema::new();
+    run_sql("CREATE TABLE users (id INTEGER, name TEXT)", &mut s).unwrap();
+    run_sql("INSERT INTO users VALUES (1, 'alice')", &mut s).unwrap();
+    run_sql("INSERT INTO users VALUES (2, 'bob')", &mut s).unwrap();
+    run_sql("INSERT INTO users VALUES (3, 'charlie')", &mut s).unwrap();
+
+    // project `name`, filter on `id` (a different, later column)
+    let rows = run_sql("SELECT name FROM users WHERE id > 1", &mut s).unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            vec![Mem::Text("bob".to_string())],
+            vec![Mem::Text("charlie".to_string())],
+        ],
+        "SELECT name WHERE id > 1 should return bob + charlie"
+    );
+
+    // filter on the text column while projecting it
+    let rows2 = run_sql("SELECT name FROM users WHERE name > 'alice'", &mut s).unwrap();
+    assert_eq!(rows2.len(), 2, "name > 'alice' should keep bob + charlie");
+}
+
+#[test]
 fn parse_sql_multiple_statements() {
     let stmts = parse_sql(
         "CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (1); SELECT * FROM t;",
